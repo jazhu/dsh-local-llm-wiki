@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Wiki Knowledge Base",
+    "description": "Local llm-wiki knowledge base plugin for DSH: drag-and-drop source documents in the web panel, one-click build by a real DSH session using the bundled llm-wiki skill, producing entity/concept/comparison/query wiki pages harvested automatically. In-process page-level BM25 search and link-integrity checks; registers wiki_projects / wiki_status / wiki_search / wiki_read / wiki_done for the assistant. Multi-project, incremental builds (SHA256), file-to-page association, and configurable workspace/model/auto-review for build sessions."
+  }
+}

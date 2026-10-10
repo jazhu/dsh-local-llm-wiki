@@ -1,0 +1,15 @@
+# dsh bundle patch: inserts this plugin into a profile's layer stack.
+- insert:
+    - id: dsh-local-llm-wiki
+      name: dsh-local-llm-wiki
+      config:
+        # Storage + data directory for the wiki knowledge base (multi-project
+        # JSON store + uploaded raw documents). Defaults to
+        # "<profile data dir>/dsh-local-llm-wiki" when empty.
+        dataDir: ''
+        # Optional agent preset pre-loading the llm-wiki skill in the ingest
+        # session. Empty relies on the prompt instructing the skill.
+        ingestAgentPreset: ''
+        # Fixed loopback port for the self-hosted /wiki-api server (must match
+        # the client half's API_BASE in client.tsx).
+        apiPort: 18781

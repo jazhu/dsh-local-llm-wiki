@@ -1,0 +1,57 @@
+{
+  "name": "dsh-local-llm-wiki",
+  "displayName": "DSH Wiki 知识库",
+  "description": "本地 llm-wiki 知识库插件：Web 面板拖拽上传源文档，一键由真实 DSH 会话按内置 llm-wiki 技能完成 SCHEMA 设计与编译，产出实体/概念/对比/查询四类 Wiki 页面并自动回收；进程内页面级 BM25 检索与链接完整性检查；支持多项目、增量构建（SHA256）、源文件↔页面关联与构建会话的工作区/模型/Auto review 配置。",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "main": "dist/index.mjs",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./client": "./dist/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./skills/llm-wiki.md": "./dist/skills/llm-wiki.md",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "locale",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "slots"
+      ],
+      "platform": "web"
+    }
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "knowledge-base",
+    "knowledge-graph",
+    "rag",
+    "wiki",
+    "llm-wiki"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "tsc --noEmit",
+    "test": "node test/structure.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.6.0"
+  }
+}

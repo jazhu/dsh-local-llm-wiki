@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Wiki Knowledge Base">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f5f5b"/>
+      <stop offset="1" stop-color="#0e2f2d"/>
+    </linearGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4efe4"/>
+      <stop offset="1" stop-color="#d9d0bd"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg)"/>
+  <!-- open book: two pages -->
+  <path d="M32 16c-5-4-12-5-19-4v34c7-1 14 0 19 4 5-4 12-5 19-4V12c-7-1-14 0-19 4z" fill="url(#page)"/>
+  <path d="M32 16v34" stroke="#0e2f2d" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- text lines left page -->
+  <g stroke="#4a6b5a" stroke-width="2" stroke-linecap="round">
+    <path d="M17 22h10"/>
+    <path d="M17 28h10"/>
+    <path d="M17 34h7"/>
+    <!-- text lines right page -->
+    <path d="M37 22h10"/>
+    <path d="M37 28h10"/>
+    <path d="M37 34h7"/>
+  </g>
+  <!-- knowledge node link on top -->
+  <circle cx="32" cy="10" r="3.2" fill="#ffd66b"/>
+  <path d="M32 13v3" stroke="#ffd66b" stroke-width="2" stroke-linecap="round"/>
+</svg>

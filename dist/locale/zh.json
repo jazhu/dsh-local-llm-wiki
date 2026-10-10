@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Wiki 知识库",
+    "description": "本地 llm-wiki 知识库插件：在 Web 面板拖拽上传源文档（pdf/md/docx 等），可一键由真实 DSH 会话按内置 llm-wiki 技能完成 SCHEMA 设计与编译，产出实体/概念/对比/查询四类 Wiki 页面并自动回收；插件进程内提供页面级 BM25 检索与链接完整性检查，并向助手注册 wiki_projects / wiki_status / wiki_search / wiki_read / wiki_done 五个工具。支持多项目、增量构建（SHA256）、源文件↔页面关联、构建会话的工作区/模型/Auto review 配置。"
+  }
+}

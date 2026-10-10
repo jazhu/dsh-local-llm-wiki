@@ -354,6 +354,21 @@ function ProjectCard(props: { project: Project; refresh: () => void }): ReactNod
     }
   }
 
+  // Lint-fix (2026-10-10): one session repairs all current lint issues.
+  const lintBad = !!p.lint && (p.lint.errorCount > 0 || p.lint.warnCount > 0)
+  const canLintFix = lintBad && p.status !== 'ingesting' && p.status !== 'designing' && p.status !== 'harvesting'
+  const fixLint = async () => {
+    setBusy(true); setLocalErr('')
+    try {
+      await apiPostJson(`/lintfix/${p.id}`, {})
+      await refresh()
+    } catch (e) {
+      setLocalErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return h(
     'li',
     null,
@@ -396,6 +411,7 @@ function ProjectCard(props: { project: Project; refresh: () => void }): ReactNod
       h('button', { className: 'dsw-btn dsw-ghost', disabled: busy || !canDesign, onClick: design, title: '只生成 SCHEMA 草稿，构建前人工确认' }, '① 生成 SCHEMA 草稿'),
       h('button', { className: 'dsw-btn dsw-ghost', disabled: busy || !canConfirm, onClick: confirmSchema }, '② 确认 SCHEMA'),
       h('button', { className: 'dsw-btn dsw-ghost', disabled: busy || !canIngest, onClick: ingest }, '③ 按确认的 SCHEMA 构建'),
+      lintBad ? h('button', { className: 'dsw-btn dsw-ghost', disabled: busy || !canLintFix, onClick: fixLint, title: `发起一个修复会话，按 lint 报告自动修复全部 ${p.lint!.errorCount} 错 / ${p.lint!.warnCount} 警` }, `🩹 lint 修复（${p.lint!.errorCount}错/${p.lint!.warnCount}警）`) : null,
     ),
 
     canConfirm && schemaDraft

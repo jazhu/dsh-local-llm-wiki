@@ -242,7 +242,50 @@ export async function submitIngest(args: ProjectSubmitArgs): Promise<SubmitResul
  * own schema, per the "single-session build" requirement): the session runs
  * wiki-design, writes SCHEMA.md, immediately runs wiki-init + wiki-ingest on
  * the strength of it, and calls `wiki_done` when every raw doc is compiled.
+ *
+ * Lint-fix sibling (2026-10-10): submitLintFix sends the current lint report
+ * into a session and has it repair the wiki in place (create missing target
+ * pages, or rewrite dead links; clean temporary files per the skill's workspace
+ * rules). The session calls `wiki_done` when done so the plugin re-harvests and
+ * re-lints.
  */
+export async function submitLintFix(args: ProjectSubmitArgs & { lintReport: string }): Promise<SubmitResult> {
+  const doneTool = args.doneTool ?? 'wiki_done'
+  const prompt = withSkill(args.skillText, buildLintFixPrompt(args, args.lintReport, doneTool))
+  return submit(args.controller, {
+    cwd: args.projectDir,
+    agentPreset: args.agentPreset,
+    workspaceId: args.workspaceId,
+    modelSelection: args.modelSelection,
+    permissionPreset: args.permissionPreset,
+    title: `dsh-local-llm-wiki lint 修复 · ${args.projectName}`,
+    prompt,
+    signal: args.signal,
+  })
+}
+
+function buildLintFixPrompt(args: ProjectSubmitArgs, lintReport: string, doneTool: string): string {
+  return [
+    `你是知识库维护助手。下面是对该项目 wiki 目录的 lint 检查报告，请按 llm-wiki 技能的 wiki-lint / wiki-update 方法修复所有 error 级问题（warn 级尽力处理）。`,
+    ``,
+    `项目名：${args.projectName}`,
+    `wiki 目录：${args.wikiDir}`,
+    ``,
+    `lint 报告：`,
+    lintReport,
+    ``,
+    `修复要求：`,
+    `1. 「链接指向不存在的页面」：优先补建缺失的目标页面（按 llm-wiki 页面规范，带 YAML frontmatter，内容基于 raw/ 源文档撰写；若该主题在源文档中不存在，则把引用页的链接改为指向已有页面或去掉链接）；`,
+    `2. 「页面缺少标题」「孤立页面」：补 frontmatter title，或在 index.md 中为孤立页面建立入口链接；`,
+    `3. 不要改动与问题无关的页面；不要删除 SCHEMA.md / log.md / index.md；`,
+    `4. 修复完成后自查一遍链接完整性，然后调用工具 ${doneTool} 回写结果，参数为：`,
+    `- projectId: "${args.projectId}"`,
+    `- wikiDir: "${args.wikiDir}"`,
+    `只有在调用该工具后，修复才算完成。`,
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
 export async function submitBuild(args: ProjectSubmitArgs): Promise<SubmitResult> {
   const rawDir = path.join(args.projectDir, 'raw')
   const listing = await stageSourceIndex(rawDir, args.rawDocs)

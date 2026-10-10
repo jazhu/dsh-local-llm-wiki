@@ -1036,6 +1036,40 @@ async function submitIngest(args) {
     signal: args.signal
   });
 }
+async function submitLintFix(args) {
+  const doneTool = args.doneTool ?? "wiki_done";
+  const prompt = withSkill(args.skillText, buildLintFixPrompt(args, args.lintReport, doneTool));
+  return submit(args.controller, {
+    cwd: args.projectDir,
+    agentPreset: args.agentPreset,
+    workspaceId: args.workspaceId,
+    modelSelection: args.modelSelection,
+    permissionPreset: args.permissionPreset,
+    title: `dsh-local-llm-wiki lint \u4FEE\u590D \xB7 ${args.projectName}`,
+    prompt,
+    signal: args.signal
+  });
+}
+function buildLintFixPrompt(args, lintReport, doneTool) {
+  return [
+    `\u4F60\u662F\u77E5\u8BC6\u5E93\u7EF4\u62A4\u52A9\u624B\u3002\u4E0B\u9762\u662F\u5BF9\u8BE5\u9879\u76EE wiki \u76EE\u5F55\u7684 lint \u68C0\u67E5\u62A5\u544A\uFF0C\u8BF7\u6309 llm-wiki \u6280\u80FD\u7684 wiki-lint / wiki-update \u65B9\u6CD5\u4FEE\u590D\u6240\u6709 error \u7EA7\u95EE\u9898\uFF08warn \u7EA7\u5C3D\u529B\u5904\u7406\uFF09\u3002`,
+    ``,
+    `\u9879\u76EE\u540D\uFF1A${args.projectName}`,
+    `wiki \u76EE\u5F55\uFF1A${args.wikiDir}`,
+    ``,
+    `lint \u62A5\u544A\uFF1A`,
+    lintReport,
+    ``,
+    `\u4FEE\u590D\u8981\u6C42\uFF1A`,
+    `1. \u300C\u94FE\u63A5\u6307\u5411\u4E0D\u5B58\u5728\u7684\u9875\u9762\u300D\uFF1A\u4F18\u5148\u8865\u5EFA\u7F3A\u5931\u7684\u76EE\u6807\u9875\u9762\uFF08\u6309 llm-wiki \u9875\u9762\u89C4\u8303\uFF0C\u5E26 YAML frontmatter\uFF0C\u5185\u5BB9\u57FA\u4E8E raw/ \u6E90\u6587\u6863\u64B0\u5199\uFF1B\u82E5\u8BE5\u4E3B\u9898\u5728\u6E90\u6587\u6863\u4E2D\u4E0D\u5B58\u5728\uFF0C\u5219\u628A\u5F15\u7528\u9875\u7684\u94FE\u63A5\u6539\u4E3A\u6307\u5411\u5DF2\u6709\u9875\u9762\u6216\u53BB\u6389\u94FE\u63A5\uFF09\uFF1B`,
+    `2. \u300C\u9875\u9762\u7F3A\u5C11\u6807\u9898\u300D\u300C\u5B64\u7ACB\u9875\u9762\u300D\uFF1A\u8865 frontmatter title\uFF0C\u6216\u5728 index.md \u4E2D\u4E3A\u5B64\u7ACB\u9875\u9762\u5EFA\u7ACB\u5165\u53E3\u94FE\u63A5\uFF1B`,
+    `3. \u4E0D\u8981\u6539\u52A8\u4E0E\u95EE\u9898\u65E0\u5173\u7684\u9875\u9762\uFF1B\u4E0D\u8981\u5220\u9664 SCHEMA.md / log.md / index.md\uFF1B`,
+    `4. \u4FEE\u590D\u5B8C\u6210\u540E\u81EA\u67E5\u4E00\u904D\u94FE\u63A5\u5B8C\u6574\u6027\uFF0C\u7136\u540E\u8C03\u7528\u5DE5\u5177 ${doneTool} \u56DE\u5199\u7ED3\u679C\uFF0C\u53C2\u6570\u4E3A\uFF1A`,
+    `- projectId: "${args.projectId}"`,
+    `- wikiDir: "${args.wikiDir}"`,
+    `\u53EA\u6709\u5728\u8C03\u7528\u8BE5\u5DE5\u5177\u540E\uFF0C\u4FEE\u590D\u624D\u7B97\u5B8C\u6210\u3002`
+  ].filter(Boolean).join("\n");
+}
 async function submitBuild(args) {
   const rawDir = path2.join(args.projectDir, "raw");
   const listing = await stageSourceIndex(rawDir, args.rawDocs);
@@ -1543,6 +1577,35 @@ function activate(ctx, config) {
       await store.updateProject(projectId, { status: "ingesting", dshSessionId: r.sessionId, schemaConfirmed: false });
       return r.sessionId;
     },
+    submitLintFix: async (projectId) => {
+      const ctrl = sessionController;
+      if (!ctrl) throw new Error("\u672C profile \u65E0 sessionController\uFF0Clint \u4FEE\u590D\u4E0D\u53EF\u7528");
+      const p = store.get(projectId);
+      if (!p) throw new Error("project not found");
+      const report = p.lint;
+      if (!report || !report.errorCount && !report.warnCount) throw new Error("\u5F53\u524D\u6CA1\u6709\u9700\u8981\u4FEE\u590D\u7684 lint \u95EE\u9898");
+      const rawDocs = await store.scanRaw(projectId);
+      const reportText = report.issues.map((i) => `- [${i.severity === "error" ? "error" : "warn"}] ${i.page}: ${i.message}`).join("\n");
+      const r = await submitLintFix({
+        controller: ctrl,
+        projectDir: store.projectAbs(projectId),
+        wikiDir: store.wikiDir(projectId),
+        projectId,
+        projectName: p.name,
+        domain: p.domain,
+        agentPreset: resolved.ingestAgentPreset,
+        workspaceId: resolved.ingestWorkspaceId || void 0,
+        modelSelection: parseModelSelection(resolved.ingestModel),
+        permissionPreset: resolved.ingestPermissionPreset,
+        skillText: builtinSkill,
+        signal: new AbortController().signal,
+        rawDocs,
+        doneTool: "wiki_done",
+        lintReport: reportText || "\uFF08\u65E0\u8BE6\u7EC6\u6761\u76EE\uFF09"
+      });
+      await store.updateProject(projectId, { status: "ingesting", dshSessionId: r.sessionId });
+      return r.sessionId;
+    },
     // Design completion is detected by the presence of SCHEMA.md on disk.
     // Also recovers a project that markStalled() failed after a restart: the
     // session is gone but the draft may already be sitting in the wiki dir.
@@ -1815,6 +1878,7 @@ async function handleApiRequest(req, res, deps) {
     return;
   }
   const buildMatch = /^\/build\/([^/]+)$/.exec(rest);
+  let lintFixMatch;
   if (method === "POST" && buildMatch) {
     if (!deps.getSession()) {
       writeJson(res, 503, { ok: false, error: "\u672C profile \u65E0 sessionController\uFF0C\u6784\u5EFA\u4E0D\u53EF\u7528" });
@@ -1826,6 +1890,20 @@ async function handleApiRequest(req, res, deps) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       await deps.store.updateProject(buildMatch[1], { status: "failed", error: msg });
+      writeJson(res, 400, { ok: false, error: msg });
+    }
+    return;
+  }
+  if (method === "POST" && (lintFixMatch = rest.match(/^\/lintfix\/(.+)$/))) {
+    if (!deps.getSession()) {
+      writeJson(res, 503, { ok: false, error: "\u672C profile \u65E0 sessionController\uFF0Clint \u4FEE\u590D\u4E0D\u53EF\u7528" });
+      return;
+    }
+    try {
+      const sessionId = await deps.submitLintFix(lintFixMatch[1]);
+      writeJson(res, 200, { ok: true, sessionId, status: "ingesting" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       writeJson(res, 400, { ok: false, error: msg });
     }
     return;

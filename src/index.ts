@@ -26,6 +26,7 @@ import {
   submitBuild,
   submitDesign,
   submitIngest,
+  submitLintFix,
   type SessionControllerLike,
 } from './session-ingest.ts'
 import { lintPages } from './lint.ts'
@@ -407,6 +408,37 @@ function activate(ctx: ContextLike, config?: Partial<Config>): void {
       await store.updateProject(projectId, { status: 'ingesting', dshSessionId: r.sessionId, schemaConfirmed: false })
       return r.sessionId
     },
+    submitLintFix: async (projectId: string) => {
+      const ctrl = sessionController
+      if (!ctrl) throw new Error('本 profile 无 sessionController，lint 修复不可用')
+      const p = store.get(projectId)
+      if (!p) throw new Error('project not found')
+      const report = p.lint
+      if (!report || (!report.errorCount && !report.warnCount)) throw new Error('当前没有需要修复的 lint 问题')
+      const rawDocs = await store.scanRaw(projectId)
+      const reportText = report.issues
+        .map((i) => `- [${i.severity === 'error' ? 'error' : 'warn'}] ${i.page}: ${i.message}`)
+        .join('\n')
+      const r = await submitLintFix({
+        controller: ctrl,
+        projectDir: store.projectAbs(projectId),
+        wikiDir: store.wikiDir(projectId),
+        projectId,
+        projectName: p.name,
+        domain: p.domain,
+        agentPreset: resolved.ingestAgentPreset,
+        workspaceId: resolved.ingestWorkspaceId || undefined,
+        modelSelection: parseModelSelection(resolved.ingestModel),
+        permissionPreset: resolved.ingestPermissionPreset,
+        skillText: builtinSkill,
+        signal: new AbortController().signal,
+        rawDocs,
+        doneTool: 'wiki_done',
+        lintReport: reportText || '（无详细条目）',
+      })
+      await store.updateProject(projectId, { status: 'ingesting', dshSessionId: r.sessionId })
+      return r.sessionId
+    },
     // Design completion is detected by the presence of SCHEMA.md on disk.
     // Also recovers a project that markStalled() failed after a restart: the
     // session is gone but the draft may already be sitting in the wiki dir.
@@ -586,6 +618,7 @@ interface Deps {
   submitDesign: (id: string) => Promise<string>
   submitIngest: (id: string) => Promise<string>
   submitBuild: (id: string) => Promise<string>
+  submitLintFix: (id: string) => Promise<string>
   advanceDesign: (id: string) => Promise<ReturnType<ProjectStore['get']>>
   saveSettings: (patch: { ingestWorkspaceId?: string; ingestModel?: string }) => Config
   logInfo: (m: string) => void
@@ -770,6 +803,7 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, deps:
   // runs wiki-design → SCHEMA.md → wiki-init → wiki-ingest → wiki_done in one
   // go. Replaces the old import-wiki path as the "no-confirm" build route.
   const buildMatch = /^\/build\/([^/]+)$/.exec(rest)
+  let lintFixMatch: RegExpMatchArray | null
   if (method === 'POST' && buildMatch) {
     if (!deps.getSession()) {
       writeJson(res, 503, { ok: false, error: '本 profile 无 sessionController，构建不可用' })
@@ -781,6 +815,22 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, deps:
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       await deps.store.updateProject(buildMatch[1], { status: 'failed', error: msg })
+      writeJson(res, 400, { ok: false, error: msg })
+    }
+    return
+  }
+
+  // POST /lintfix/:id — send the current lint report into a repair session.
+  if (method === 'POST' && (lintFixMatch = rest.match(/^\/lintfix\/(.+)$/))) {
+    if (!deps.getSession()) {
+      writeJson(res, 503, { ok: false, error: '本 profile 无 sessionController，lint 修复不可用' })
+      return
+    }
+    try {
+      const sessionId = await deps.submitLintFix(lintFixMatch[1])
+      writeJson(res, 200, { ok: true, sessionId, status: 'ingesting' })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
       writeJson(res, 400, { ok: false, error: msg })
     }
     return

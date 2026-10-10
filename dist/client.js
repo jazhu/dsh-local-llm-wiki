@@ -302,6 +302,20 @@ function ProjectCard(props) {
       setBusy(false);
     }
   };
+  const lintBad = !!p.lint && (p.lint.errorCount > 0 || p.lint.warnCount > 0);
+  const canLintFix = lintBad && p.status !== "ingesting" && p.status !== "designing" && p.status !== "harvesting";
+  const fixLint = async () => {
+    setBusy(true);
+    setLocalErr("");
+    try {
+      await apiPostJson(`/lintfix/${p.id}`, {});
+      await refresh();
+    } catch (e) {
+      setLocalErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
   return (0, import_react.createElement)(
     "li",
     null,
@@ -348,7 +362,8 @@ function ProjectCard(props) {
       (0, import_react.createElement)("button", { className: "dsw-btn", disabled: busy || !canBuild, onClick: buildAll, title: "\u4E00\u4E2A\u4F1A\u8BDD\u5185\u5B8C\u6210\uFF1ASCHEMA \u8BBE\u8BA1 \u2192 \u6784\u5EFA \u2192 \u56DE\u6536\u5165\u5E93\uFF08\u65E0\u9700\u4EBA\u5DE5\u786E\u8BA4 SCHEMA\uFF09" }, "\u26A1 \u4E00\u952E\u6784\u5EFA"),
       (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", disabled: busy || !canDesign, onClick: design, title: "\u53EA\u751F\u6210 SCHEMA \u8349\u7A3F\uFF0C\u6784\u5EFA\u524D\u4EBA\u5DE5\u786E\u8BA4" }, "\u2460 \u751F\u6210 SCHEMA \u8349\u7A3F"),
       (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", disabled: busy || !canConfirm, onClick: confirmSchema }, "\u2461 \u786E\u8BA4 SCHEMA"),
-      (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", disabled: busy || !canIngest, onClick: ingest }, "\u2462 \u6309\u786E\u8BA4\u7684 SCHEMA \u6784\u5EFA")
+      (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", disabled: busy || !canIngest, onClick: ingest }, "\u2462 \u6309\u786E\u8BA4\u7684 SCHEMA \u6784\u5EFA"),
+      lintBad ? (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", disabled: busy || !canLintFix, onClick: fixLint, title: `\u53D1\u8D77\u4E00\u4E2A\u4FEE\u590D\u4F1A\u8BDD\uFF0C\u6309 lint \u62A5\u544A\u81EA\u52A8\u4FEE\u590D\u5168\u90E8 ${p.lint.errorCount} \u9519 / ${p.lint.warnCount} \u8B66` }, `\u{1FA79} lint \u4FEE\u590D\uFF08${p.lint.errorCount}\u9519/${p.lint.warnCount}\u8B66\uFF09`) : null
     ),
     canConfirm && schemaDraft ? (0, import_react.createElement)(
       "div",

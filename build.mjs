@@ -97,11 +97,16 @@ function mkdirIfMissing(dir) {
 // Bundle the built-in llm-wiki skill (requirement ③, 2026-10-10): copy the
 // skill markdown into dist/skills/ so the host half can inject it into every
 // build session prompt without depending on any external skill directory.
-import { copyFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, cpSync, mkdirSync } from 'node:fs'
 try {
   mkdirSync('dist/skills', { recursive: true })
   copyFileSync('resources/llm-wiki-SKILL.md', 'dist/skills/llm-wiki.md')
-  console.log('[build] bundled llm-wiki skill → dist/skills/llm-wiki.md')
+  // Mirror the source locale/ into dist/ defensively: some installers/loader
+  // paths stat <bundleRoot>/locale even when package exports point at the
+  // package root, and a fresh clone without a full dist tree would otherwise
+  // fail metadata loading with ENOENT scandir .../locale.
+  cpSync('locale', 'dist/locale', { recursive: true })
+  console.log('[build] bundled llm-wiki skill → dist/skills/llm-wiki.md; locale mirrored → dist/locale/')
 } catch (err) {
   console.warn('[build] skill copy skipped:', err && err.message)
 }

@@ -27,12 +27,17 @@
 
 ## 安装（DSH 桌面版 profile）
 
-1. 克隆本仓库到本地，然后构建：
+1. 克隆本仓库到本地，然后构建（`dist/` 不入库，必须先构建）：
 
    ```bash
    pnpm install
    pnpm run build
    ```
+
+   > 构建后 `dist/` 必须包含：`index.mjs`、`client.js`、`skills/llm-wiki.md`、
+   > `locale/zh.json`、`locale/en.json`。若在别的机器上安装时提示
+   > 「no such file or directory, scandir ...\\locale」，说明 `dist/` 缺失或
+   > 不完整——在本机重新执行 `pnpm run build` 即可。
 
 2. 在 DSH profile（`~/.dsh/profiles/desktop`）的 `package.json` 中注册：
 

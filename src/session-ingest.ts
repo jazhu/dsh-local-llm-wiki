@@ -264,9 +264,14 @@ async function submit(
   controller: SessionControllerLike,
   opts: { cwd: string; agentPreset: string; workspaceId?: string; modelSelection?: { provider: string; model: string }; permissionPreset?: string; title: string; prompt: string; signal: AbortSignal },
 ): Promise<SubmitResult> {
-  const createReq: { cwd: string; agentPreset?: string; workspaceId?: string } = { cwd: opts.cwd }
+  // Host contract (learned 2026-10-10): session.create accepts workspaceId OR
+  // cwd, not both. Prefer workspaceId when set; the session cwd then defaults
+  // to that workspace's directory. Only fall back to cwd when no workspace
+  // was selected (the project dir keeps the session's file operations local).
+  const createReq: { cwd?: string; agentPreset?: string; workspaceId?: string } = {}
   if (opts.agentPreset) createReq.agentPreset = opts.agentPreset
   if (opts.workspaceId) createReq.workspaceId = opts.workspaceId
+  else createReq.cwd = opts.cwd
   const session = await controller.create(createReq)
   const sessionId = String((session as any)?.sessionId ?? (session as any)?.id ?? '')
   if (!sessionId) throw new Error('sessionController.create returned no session id')

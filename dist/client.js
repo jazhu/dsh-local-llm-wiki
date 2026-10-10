@@ -206,6 +206,16 @@ function ProjectCard(props) {
   const [drag, setDrag] = (0, import_react.useState)(false);
   const [localErr, setLocalErr] = (0, import_react.useState)("");
   const [busy, setBusy] = (0, import_react.useState)(false);
+  const [dismissedErr, setDismissedErr] = (0, import_react.useState)(null);
+  (0, import_react.useEffect)(() => {
+    if (!p.error) {
+      setDismissedErr(null);
+      return;
+    }
+    if (dismissedErr === null) return;
+    const t = setTimeout(() => setDismissedErr(null), 6e4);
+    return () => clearTimeout(t);
+  }, [p.error]);
   const [schemaDraft, setSchemaDraft] = (0, import_react.useState)("");
   const [uploads, setUploads] = (0, import_react.useState)([]);
   const [pages, setPages] = (0, import_react.useState)([]);
@@ -329,7 +339,12 @@ function ProjectCard(props) {
       (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", style: { marginLeft: "auto" }, disabled: busy, onClick: del }, "\u5220\u9664")
     ),
     p.domain ? (0, import_react.createElement)("div", { className: "dsw-muted" }, p.domain) : null,
-    p.error ? (0, import_react.createElement)("div", { className: "dsw-err" }, "\u9519\u8BEF\uFF1A", p.error) : null,
+    p.error && dismissedErr !== p.error ? (0, import_react.createElement)(
+      "div",
+      { className: "dsw-err", style: { display: "flex", alignItems: "center", gap: 8 } },
+      (0, import_react.createElement)("span", { style: { flex: 1 } }, "\u9519\u8BEF\uFF1A", p.error),
+      (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", style: { padding: "0 8px" }, onClick: () => p.error && setDismissedErr(p.error), title: "\u5173\u95ED\uFF0860 \u79D2\u540E\u81EA\u52A8\u6062\u590D\u663E\u793A\u80FD\u529B\uFF0C\u65B0\u9519\u8BEF\u4ECD\u4F1A\u51FA\u73B0\uFF09" }, "\u2715")
+    ) : null,
     // Upload zone
     (0, import_react.createElement)(
       "div",

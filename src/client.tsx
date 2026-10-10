@@ -246,6 +246,17 @@ function ProjectCard(props: { project: Project; refresh: () => void }): ReactNod
   const [drag, setDrag] = useState(false)
   const [localErr, setLocalErr] = useState('')
   const [busy, setBusy] = useState(false)
+  // Dismissed persistent project error (user-requested 2026-10-10): stale
+  // errors used to linger forever until a rebuild succeeded. Track the exact
+  // message the user closed; a NEW different error still shows. Auto-dismiss
+  // after 60s so transient failures fade on their own.
+  const [dismissedErr, setDismissedErr] = useState<string | null>(null)
+  useEffect(() => {
+    if (!p.error) { setDismissedErr(null); return }
+    if (dismissedErr === null) return
+    const t = setTimeout(() => setDismissedErr(null), 60000)
+    return () => clearTimeout(t)
+  }, [p.error])
   const [schemaDraft, setSchemaDraft] = useState('')
   const [uploads, setUploads] = useState<UploadInfo[]>([])
   const [pages, setPages] = useState<PageInfo[]>([])
@@ -382,7 +393,12 @@ function ProjectCard(props: { project: Project; refresh: () => void }): ReactNod
       h('button', { className: 'dsw-btn dsw-ghost', style: { marginLeft: 'auto' }, disabled: busy, onClick: del }, '删除'),
     ),
     p.domain ? h('div', { className: 'dsw-muted' }, p.domain) : null,
-    p.error ? h('div', { className: 'dsw-err' }, '错误：', p.error) : null,
+    p.error && dismissedErr !== p.error
+      ? h('div', { className: 'dsw-err', style: { display: 'flex', alignItems: 'center', gap: 8 } },
+          h('span', { style: { flex: 1 } }, '错误：', p.error),
+          h('button', { className: 'dsw-btn dsw-ghost', style: { padding: '0 8px' }, onClick: () => p.error && setDismissedErr(p.error), title: '关闭（60 秒后自动恢复显示能力，新错误仍会出现）' }, '✕'),
+        )
+      : null,
 
     // Upload zone
     h(

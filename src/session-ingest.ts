@@ -21,6 +21,8 @@
 //     registered UNCONDITIONALLY, never behind a sessionController gate).
 
 import { promises as fs } from 'node:fs'
+import { appendFileSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 
@@ -49,28 +51,81 @@ export interface SessionControllerLike {
  * activation, so the caller stores the resolved controller and reads it lazily.
  */
 export function acquireSessionController(ctx: any, onReady: (controller: SessionControllerLike) => void): void {
-  if (!ctx?.inject) return
+  // Diagnostic trace (2026-10-10): write every acquisition milestone to the same
+  // activation log the host-side trace uses, so a restart pinpoints which route
+  // (reflect / inject callback) actually fires.
+  const trace = (msg: string): void => {
+    try {
+      appendFileSync(path.join(os.homedir(), '.dsh', 'dsh-local-llm-wiki-activation.log'), `[${new Date().toISOString()}] [sessionController] ${msg}\n`)
+    } catch { /* never break activation */ }
+  }
+  trace(`acquire called; ctxKeys=${ctx ? Object.getOwnPropertyNames(ctx).slice(0, 20).join(',') : 'null'}`)
+  // Resolve a ready controller synchronously when the host already exposes the
+  // service slice via `reflect.get` (the same two-path route dsh-syslog-alert
+  // uses). The reactive ctx.inject callback below still fires for late-bound or
+  // fiber-crossing service provisioning, so both routes converge on onReady.
+  const settle = (candidate: unknown): void => {
+    const ctrl = candidate as SessionControllerLike | undefined
+    if (ctrl && typeof ctrl.create === 'function' && typeof ctrl.prompt === 'function') {
+      onReady(ctrl)
+    } else {
+      trace(`settle candidate invalid: ${candidate === undefined ? 'undefined' : typeof candidate}${ctrl ? ` create=${typeof (ctrl as any).create} prompt=${typeof (ctrl as any).prompt}` : ''}`)
+    }
+  }
   try {
+    const reflect = ctx?.reflect
+    if (reflect && typeof reflect.get === 'function') {
+      let r1: unknown, r2: unknown
+      try { r1 = reflect.get('sessionController') } catch (e) { trace(`reflect.get threw: ${e instanceof Error ? e.message : String(e)}`) }
+      try { r2 = reflect.get('sessionController', false) } catch (e) { trace(`reflect.get(false) threw: ${e instanceof Error ? e.message : String(e)}`) }
+      trace(`reflect.get r1=${r1 === undefined ? 'undefined' : typeof r1} r2=${r2 === undefined ? 'undefined' : typeof r2}`)
+      settle(r1)
+      settle(r2)
+    } else {
+      trace('reflect.get unavailable')
+    }
+  } catch {
+    /* ignore: reflect not available on this host */
+  }
+  if (!ctx?.inject) {
+    trace('ctx.inject missing — abort')
+    return
+  }
+  try {
+    trace('ctx.inject(["sessionController"], cb) registering')
     ctx.inject(['sessionController'], (sctx: any) => {
+      trace(`inject callback fired; sctxType=${sctx === undefined ? 'undefined' : typeof sctx}`)
       try {
         const ctrl = sctx?.sessionController
+        trace(`sctx.sessionController=${ctrl === undefined ? 'undefined' : typeof ctrl} create=${typeof (ctrl as any)?.create} prompt=${typeof (ctrl as any)?.prompt}`)
         if (ctrl && typeof ctrl.create === 'function' && typeof ctrl.prompt === 'function') {
-          // Same fiber also exposes permissionPresets (only when the permission
-          // presets plugin is composed). Used to switch new ingest sessions to
-          // the Auto review preset when the host has the auto-review layer on.
-          const presets = sctx?.permissionPresets
-          if (presets && typeof presets.set === 'function') {
-            permissionPresetsRef = presets
-            onPermissionPresets?.(presets)
-          }
+          // Deliver the controller FIRST — any later failure must not prevent
+          // onReady. (2026-10-10 root cause of "本 profile 无 sessionController":
+          // the permissionPresets read below throws on the cordis proxy when the
+          // property is not injected, and the surrounding catch swallowed the
+          // exception AFTER skipping onReady.)
           onReady(ctrl)
+          // Same fiber may also expose permissionPresets (only when the
+          // permission presets plugin is composed). Isolated try/catch: an
+          // uninjected property read throws on the cordis proxy and must never
+          // take the controller delivery down with it.
+          try {
+            const presets = sctx?.permissionPresets
+            if (presets && typeof presets.set === 'function') {
+              permissionPresetsRef = presets
+              onPermissionPresets?.(presets)
+            }
+          } catch (e) {
+            trace(`permissionPresets read failed (expected when not injected): ${e instanceof Error ? e.message : String(e)}`)
+          }
         }
       } catch {
         /* service not available on this profile */
       }
     })
-  } catch {
-    /* headless / minimal profile: no session service */
+    trace('ctx.inject registered without throwing')
+  } catch (e) {
+    trace(`ctx.inject threw synchronously: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`)
   }
 }
 

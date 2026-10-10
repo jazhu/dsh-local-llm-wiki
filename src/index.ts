@@ -197,6 +197,7 @@ function activate(ctx: ContextLike, config?: Partial<Config>): void {
   // ---- session controller (for design + ingest) --------------------------
   acquireSessionController(ctx, (ctrl) => {
     sessionController = ctrl
+    trace(`sessionController assigned; create=${typeof ctrl.create} prompt=${typeof ctrl.prompt}`)
     logInfo('已接入 sessionController，可提交 design / ingest 会话')
   })
   // Capture the host permissionPresets service so submit() can switch new
@@ -486,7 +487,7 @@ function activate(ctx: ContextLike, config?: Partial<Config>): void {
 
 function setCors(res: ServerResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   res.setHeader('Access-Control-Max-Age', '300')
 }

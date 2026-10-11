@@ -378,6 +378,52 @@ export class ProjectStore {
   }
 
   /**
+   * Browse a filesystem directory for the wiki-import folder picker
+   * (user-requested 2026-10-11). Returns subdirectories of `dir` (sorted,
+   * hidden dirs skipped) plus a flag telling whether `dir` itself looks like
+   * a built wiki root (index.md / SCHEMA.md present or any of the harvest
+   * kinds exists) so the panel can hint the user. Best-effort and read-only.
+   */
+  async browseDir(dir: string): Promise<{ path: string; parent: string | null; isWikiRoot: boolean; dirs: { name: string; path: string }[]; roots: { name: string; path: string }[] }> {
+    const target = path.resolve(dir)
+    let entries: import('node:fs').Dirent[]
+    try {
+      entries = await fs.readdir(target, { withFileTypes: true })
+    } catch {
+      throw new Error(`目录不存在或不可读: ${target}`)
+    }
+    const dirs = entries
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
+      .map((e) => ({ name: e.name, path: path.join(target, e.name) }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    // Quick check: does this dir look like a built wiki root?
+    const markers = ['index.md', 'SCHEMA.md', ...HARVEST_KINDS]
+    const isWikiRoot = await (async () => {
+      for (const m of markers) {
+        try { if ((await fs.stat(path.join(target, m))).isDirectory() || m.endsWith('.md')) return true } catch { /* next */ }
+      }
+      return false
+    })()
+    // Candidate wiki roots one level down (drives are huge — only scan depth 1).
+    const roots: { name: string; path: string }[] = []
+    for (const d of dirs) {
+      try {
+        const sub = await fs.readdir(d.path, { withFileTypes: true })
+        const has = await (async () => {
+          for (const m of markers) {
+            try { if (sub.some((s) => s.name === m)) return true } catch { /* next */ }
+          }
+          return false
+        })()
+        if (has) roots.push(d)
+      } catch { /* unreadable subdir — skip */ }
+    }
+    let parent: string | null = path.dirname(target)
+    if (parent === target) parent = null // drive root
+    return { path: target, parent, isWikiRoot, dirs, roots }
+  }
+
+  /**
    * Import an already-built wiki directory into the project: recursively copy
    * it over the project's wiki dir (merging; existing files are overwritten),
    * then harvest. Returns the harvested page count. Refuses to import from a

@@ -702,6 +702,17 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, deps:
     return
   }
 
+  // GET /browse?path=  — folder picker for the wiki-import dialog
+  if (method === 'GET' && rest === '/browse') {
+    const target = url.searchParams.get('path') || os.homedir()
+    try {
+      writeJson(res, 200, { ok: true, ...(await deps.store.browseDir(target)) })
+    } catch (err) {
+      writeJson(res, 400, { ok: false, error: err instanceof Error ? err.message : String(err) })
+    }
+    return
+  }
+
   // POST /project  { name, domain?, wikiName?, importDir? }
   if (method === 'POST' && rest === '/project') {
     const body = JSON.parse((await readBody(req)).toString('utf-8') || '{}')

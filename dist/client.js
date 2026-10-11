@@ -220,6 +220,7 @@ function ProjectsTab(props) {
   const [newName, setNewName] = (0, import_react.useState)("");
   const [newDomain, setNewDomain] = (0, import_react.useState)("");
   const [importDir, setImportDir] = (0, import_react.useState)("");
+  const [pickerOpen, setPickerOpen] = (0, import_react.useState)(false);
   const create = async () => {
     if (!newName.trim()) return;
     setCreating(true);
@@ -258,9 +259,18 @@ function ProjectsTab(props) {
       (0, import_react.createElement)(
         "div",
         { className: "dsw-row", style: { marginTop: 6 } },
-        (0, import_react.createElement)("input", { className: "dsw-input", placeholder: "\u5DF2\u6709 wiki \u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84\uFF08\u53EF\u9009\uFF0C\u586B\u4E86\u5373\u5BFC\u5165\u8BE5\u5DF2\u6784\u5EFA\u77E5\u8BC6\u5E93\uFF0C\u514D\u91CD\u590D\u6784\u5EFA\uFF1B\u5982 D:\\data\\hillstone\\wiki\uFF09", value: importDir, onChange: (e) => setImportDir(e.target.value), style: { flex: 1 } })
+        (0, import_react.createElement)("input", { className: "dsw-input", placeholder: "\u5DF2\u6709 wiki \u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84\uFF08\u53EF\u9009\uFF0C\u586B\u4E86\u5373\u5BFC\u5165\u8BE5\u5DF2\u6784\u5EFA\u77E5\u8BC6\u5E93\uFF0C\u514D\u91CD\u590D\u6784\u5EFA\uFF09", value: importDir, onChange: (e) => setImportDir(e.target.value), style: { flex: 1 } }),
+        (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", onClick: () => setPickerOpen(true), title: "\u5F39\u7A97\u6D4F\u89C8\u9009\u62E9\u5DF2\u6784\u5EFA\u7684\u77E5\u8BC6\u5E93\u76EE\u5F55" }, "\u{1F4C1} \u9009\u62E9\u6587\u4EF6\u5939")
       ),
-      importDir.trim() ? (0, import_react.createElement)("div", { className: "dsw-muted", style: { marginTop: 4 } }, "\u26A0 \u5BFC\u5165\u8981\u6C42\u76EE\u5F55\u542B SCHEMA.md / entities / concepts \u7B49\u6807\u51C6 wiki \u7ED3\u6784\uFF1B\u76EE\u5F55\u4E0D\u5B58\u5728\u6216\u7ED3\u6784\u4E0D\u7B26\u4F1A\u5728\u521B\u5EFA\u65F6\u62A5\u9519\u5E76\u81EA\u52A8\u56DE\u9000\u3002") : null
+      importDir.trim() ? (0, import_react.createElement)("div", { className: "dsw-muted", style: { marginTop: 4 } }, "\u26A0 \u5BFC\u5165\u8981\u6C42\u76EE\u5F55\u662F\u6807\u51C6 wiki \u7ED3\u6784\uFF08\u542B index.md/SCHEMA.md \u6216 entities/concepts \u7B49\u5B50\u76EE\u5F55\uFF09\uFF1B\u7ED3\u6784\u4E0D\u7B26\u4F1A\u5728\u521B\u5EFA\u65F6\u62A5\u9519\u5E76\u81EA\u52A8\u56DE\u9000\u3002") : null,
+      pickerOpen ? (0, import_react.createElement)(DirPickerModal, {
+        initialPath: importDir.trim() || void 0,
+        onPick: (p2) => {
+          setImportDir(p2);
+          setPickerOpen(false);
+        },
+        onClose: () => setPickerOpen(false)
+      }) : null
     ),
     projects.length === 0 ? (0, import_react.createElement)("div", { className: "dsw-muted" }, "\u8FD8\u6CA1\u6709\u77E5\u8BC6\u5E93\uFF0C\u5148\u521B\u5EFA\u4E00\u4E2A\u518D\u4E0A\u4F20\u6587\u6863\u3002") : (0, import_react.createElement)("div", { className: "dsw-list" }, projects.map((p) => (0, import_react.createElement)(ProjectCard, { key: p.id, project: p, refresh, showToast })))
   );
@@ -654,6 +664,82 @@ function PageModal(props) {
         { onClick: (e) => e.stopPropagation(), style: { width: "min(760px, 92vw)", maxHeight: "86vh", overflow: "auto", background: "var(--dsw-bg-color,#fff)", borderRadius: 10, padding: 18 } },
         (0, import_react.createElement)("div", { className: "dsw-row" }, (0, import_react.createElement)("strong", null, props.open.path), (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", style: { marginLeft: "auto" }, onClick: props.onClose }, "\u5173\u95ED")),
         (0, import_react.createElement)("pre", { className: "dsw-page" }, props.open.md)
+      )
+    ),
+    document.body
+  );
+}
+function DirPickerModal(props) {
+  const { onPick, onClose } = props;
+  const [cur, setCur] = (0, import_react.useState)(props.initialPath || "");
+  const [data, setData] = (0, import_react.useState)(null);
+  const [err, setErr] = (0, import_react.useState)("");
+  const [busy, setBusy] = (0, import_react.useState)(false);
+  const load = (0, import_react.useCallback)(async (p) => {
+    setBusy(true);
+    setErr("");
+    try {
+      const r = await apiGet(`/browse?path=${encodeURIComponent(p)}`);
+      setData(r);
+      setCur(r.path);
+    } catch (e) {
+      setErr(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+  (0, import_react.useEffect)(() => {
+    void load(props.initialPath || "");
+  }, [load, props.initialPath]);
+  return (0, import_react_dom.createPortal)(
+    (0, import_react.createElement)(
+      "div",
+      { style: { position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1e3 }, onClick: onClose },
+      (0, import_react.createElement)(
+        "div",
+        { onClick: (e) => e.stopPropagation(), style: { width: "min(680px, 92vw)", maxHeight: "86vh", overflow: "auto", background: "var(--dsw-bg-color,#fff)", borderRadius: 10, padding: 18 } },
+        (0, import_react.createElement)(
+          "div",
+          { className: "dsw-row" },
+          (0, import_react.createElement)("strong", null, "\u9009\u62E9\u5DF2\u6784\u5EFA\u7684\u77E5\u8BC6\u5E93\u76EE\u5F55"),
+          (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", style: { marginLeft: "auto" }, onClick: onClose }, "\u2715")
+        ),
+        (0, import_react.createElement)("div", { className: "dsw-muted", style: { marginTop: 4 } }, "\u5BFC\u822A\u5230\u542B index.md / SCHEMA.md \u6216 entities / concepts \u5B50\u76EE\u5F55\u7684 wiki \u6839\u76EE\u5F55\u540E\u70B9\u300C\u9009\u62E9\u6B64\u76EE\u5F55\u300D\u3002"),
+        (0, import_react.createElement)(
+          "div",
+          { className: "dsw-row", style: { marginTop: 8 } },
+          data?.parent ? (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", disabled: busy, onClick: () => void load(data.parent) }, "\u2B05 \u4E0A\u7EA7") : null,
+          (0, import_react.createElement)("code", { style: { flex: 1, fontSize: 12, wordBreak: "break-all" } }, cur || "\uFF08\u52A0\u8F7D\u4E2D\u2026\uFF09"),
+          data?.isWikiRoot ? (0, import_react.createElement)("span", { className: "dsw-badge" }, "\u2713 wiki \u6839\u76EE\u5F55") : null
+        ),
+        err ? (0, import_react.createElement)("div", { className: "dsw-err", style: { marginTop: 8 } }, err) : null,
+        (0, import_react.createElement)(
+          "div",
+          { className: "dsw-scroll", style: { marginTop: 8 } },
+          data?.roots.length ? (0, import_react.createElement)("div", { className: "dsw-muted", style: { margin: "6px 0" } }, "\u2605 \u68C0\u6D4B\u5230\u7591\u4F3C wiki \u6839\u76EE\u5F55\uFF1A") : null,
+          ...(data?.roots || []).map(
+            (r) => (0, import_react.createElement)(
+              "div",
+              { key: "r:" + r.path, className: "dsw-row", style: { padding: "4px 0" } },
+              (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", onClick: () => onPick(r.path) }, `\u2605 ${r.name}`),
+              (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", onClick: () => void load(r.path) }, "\u8FDB\u5165")
+            )
+          ),
+          data?.roots.length ? (0, import_react.createElement)("div", { className: "dsw-muted", style: { margin: "6px 0" } }, "\u5B50\u76EE\u5F55\uFF1A") : null,
+          ...(data?.dirs || []).map(
+            (d) => (0, import_react.createElement)(
+              "div",
+              { key: d.path, className: "dsw-row", style: { padding: "4px 0" } },
+              (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", disabled: busy, onClick: () => void load(d.path) }, "\u{1F4C2} " + d.name)
+            )
+          ),
+          data && !data.dirs.length ? (0, import_react.createElement)("div", { className: "dsw-muted" }, "\uFF08\u65E0\u5B50\u76EE\u5F55\uFF09") : null
+        ),
+        (0, import_react.createElement)(
+          "div",
+          { className: "dsw-row", style: { marginTop: 10, justifyContent: "flex-end" } },
+          (0, import_react.createElement)("button", { className: "dsw-btn", disabled: !data || !data.isWikiRoot, title: data?.isWikiRoot ? "" : "\u5F53\u524D\u76EE\u5F55\u4E0D\u662F\u6807\u51C6 wiki \u7ED3\u6784", onClick: () => data && onPick(data.path) }, "\u9009\u62E9\u6B64\u76EE\u5F55")
+        )
       )
     ),
     document.body

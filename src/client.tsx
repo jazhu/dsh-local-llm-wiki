@@ -266,6 +266,7 @@ function ProjectsTab(props: { projects: Project[]; refresh: () => void; creating
   // Optional import of an already-built wiki dir at creation time
   // (user-requested 2026-10-11: skip re-building existing knowledge bases).
   const [importDir, setImportDir] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const create = async () => {
     if (!newName.trim()) return
@@ -302,10 +303,18 @@ function ProjectsTab(props: { projects: Project[]; refresh: () => void; creating
         h('button', { className: 'dsw-btn', disabled: creating, onClick: create }, '创建'),
       ),
       h('div', { className: 'dsw-row', style: { marginTop: 6 } },
-        h('input', { className: 'dsw-input', placeholder: '已有 wiki 目录绝对路径（可选，填了即导入该已构建知识库，免重复构建；如 D:\\data\\hillstone\\wiki）', value: importDir, onChange: (e: any) => setImportDir(e.target.value), style: { flex: 1 } }),
+        h('input', { className: 'dsw-input', placeholder: '已有 wiki 目录绝对路径（可选，填了即导入该已构建知识库，免重复构建）', value: importDir, onChange: (e: any) => setImportDir(e.target.value), style: { flex: 1 } }),
+        h('button', { className: 'dsw-btn dsw-ghost', onClick: () => setPickerOpen(true), title: '弹窗浏览选择已构建的知识库目录' }, '📁 选择文件夹'),
       ),
       importDir.trim()
-        ? h('div', { className: 'dsw-muted', style: { marginTop: 4 } }, '⚠ 导入要求目录含 SCHEMA.md / entities / concepts 等标准 wiki 结构；目录不存在或结构不符会在创建时报错并自动回退。')
+        ? h('div', { className: 'dsw-muted', style: { marginTop: 4 } }, '⚠ 导入要求目录是标准 wiki 结构（含 index.md/SCHEMA.md 或 entities/concepts 等子目录）；结构不符会在创建时报错并自动回退。')
+        : null,
+      pickerOpen
+        ? h(DirPickerModal, {
+            initialPath: importDir.trim() || undefined,
+            onPick: (p2: string) => { setImportDir(p2); setPickerOpen(false) },
+            onClose: () => setPickerOpen(false),
+          })
         : null,
     ),
     projects.length === 0
@@ -716,6 +725,85 @@ function PageModal(props: { open: { path: string; projectId: string; md: string 
         { onClick: (e: any) => e.stopPropagation(), style: { width: 'min(760px, 92vw)', maxHeight: '86vh', overflow: 'auto', background: 'var(--dsw-bg-color,#fff)', borderRadius: 10, padding: 18 } },
         h('div', { className: 'dsw-row' }, h('strong', null, props.open.path), h('button', { className: 'dsw-btn dsw-ghost', style: { marginLeft: 'auto' }, onClick: props.onClose }, '关闭')),
         h('pre', { className: 'dsw-page' }, props.open.md),
+      ),
+    ),
+    document.body,
+  )
+}
+
+// ---- directory picker modal (wiki import, user-requested 2026-10-11) -------
+
+interface BrowseResult {
+  path: string
+  parent: string | null
+  isWikiRoot: boolean
+  dirs: { name: string; path: string }[]
+  roots: { name: string; path: string }[]
+}
+
+function DirPickerModal(props: { initialPath?: string; onPick: (p: string) => void; onClose: () => void }): ReactNode {
+  const { onPick, onClose } = props
+  const [cur, setCur] = useState(props.initialPath || '')
+  const [data, setData] = useState<BrowseResult | null>(null)
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(async (p: string) => {
+    setBusy(true); setErr('')
+    try {
+      const r = await apiGet<BrowseResult>(`/browse?path=${encodeURIComponent(p)}`)
+      setData(r)
+      setCur(r.path)
+    } catch (e) {
+      setErr(String((e as Error)?.message || e))
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
+  useEffect(() => { void load(props.initialPath || '') }, [load, props.initialPath])
+
+  return createPortal(
+    h(
+      'div',
+      { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }, onClick: onClose },
+      h(
+        'div',
+        { onClick: (e: any) => e.stopPropagation(), style: { width: 'min(680px, 92vw)', maxHeight: '86vh', overflow: 'auto', background: 'var(--dsw-bg-color,#fff)', borderRadius: 10, padding: 18 } },
+        h('div', { className: 'dsw-row' },
+          h('strong', null, '选择已构建的知识库目录'),
+          h('button', { className: 'dsw-btn dsw-ghost', style: { marginLeft: 'auto' }, onClick: onClose }, '✕'),
+        ),
+        h('div', { className: 'dsw-muted', style: { marginTop: 4 } }, '导航到含 index.md / SCHEMA.md 或 entities / concepts 子目录的 wiki 根目录后点「选择此目录」。'),
+        h('div', { className: 'dsw-row', style: { marginTop: 8 } },
+          data?.parent ? h('button', { className: 'dsw-btn dsw-ghost', disabled: busy, onClick: () => void load(data.parent!) }, '⬅ 上级') : null,
+          h('code', { style: { flex: 1, fontSize: 12, wordBreak: 'break-all' } }, cur || '（加载中…）'),
+          data?.isWikiRoot ? h('span', { className: 'dsw-badge' }, '✓ wiki 根目录') : null,
+        ),
+        err ? h('div', { className: 'dsw-err', style: { marginTop: 8 } }, err) : null,
+        h(
+          'div',
+          { className: 'dsw-scroll', style: { marginTop: 8 } },
+          data?.roots.length
+            ? h('div', { className: 'dsw-muted', style: { margin: '6px 0' } }, '★ 检测到疑似 wiki 根目录：')
+            : null,
+          ...(data?.roots || []).map((r) =>
+            h('div', { key: 'r:' + r.path, className: 'dsw-row', style: { padding: '4px 0' } },
+              h('button', { className: 'dsw-btn dsw-ghost', onClick: () => onPick(r.path) }, `★ ${r.name}`),
+              h('button', { className: 'dsw-btn dsw-ghost', onClick: () => void load(r.path) }, '进入'),
+            ),
+          ),
+          data?.roots.length ? h('div', { className: 'dsw-muted', style: { margin: '6px 0' } }, '子目录：') : null,
+          ...(data?.dirs || []).map((d) =>
+            h('div', { key: d.path, className: 'dsw-row', style: { padding: '4px 0' } },
+              h('button', { className: 'dsw-btn dsw-ghost', disabled: busy, onClick: () => void load(d.path) }, '📂 ' + d.name),
+            ),
+          ),
+          data && !data.dirs.length ? h('div', { className: 'dsw-muted' }, '（无子目录）') : null,
+        ),
+        h('div', { className: 'dsw-row', style: { marginTop: 10, justifyContent: 'flex-end' } },
+          h('button', { className: 'dsw-btn', disabled: !data || !data.isWikiRoot, title: data?.isWikiRoot ? '' : '当前目录不是标准 wiki 结构', onClick: () => data && onPick(data.path) }, '选择此目录'),
+        ),
       ),
     ),
     document.body,

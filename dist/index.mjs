@@ -584,6 +584,53 @@ var ProjectStore = class {
     return out;
   }
   /**
+   * Browse a filesystem directory for the wiki-import folder picker
+   * (user-requested 2026-10-11). Returns subdirectories of `dir` (sorted,
+   * hidden dirs skipped) plus a flag telling whether `dir` itself looks like
+   * a built wiki root (index.md / SCHEMA.md present or any of the harvest
+   * kinds exists) so the panel can hint the user. Best-effort and read-only.
+   */
+  async browseDir(dir) {
+    const target = path.resolve(dir);
+    let entries;
+    try {
+      entries = await fs.readdir(target, { withFileTypes: true });
+    } catch {
+      throw new Error(`\u76EE\u5F55\u4E0D\u5B58\u5728\u6216\u4E0D\u53EF\u8BFB: ${target}`);
+    }
+    const dirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith(".") && e.name !== "node_modules").map((e) => ({ name: e.name, path: path.join(target, e.name) })).sort((a, b) => a.name.localeCompare(b.name));
+    const markers = ["index.md", "SCHEMA.md", ...HARVEST_KINDS];
+    const isWikiRoot = await (async () => {
+      for (const m of markers) {
+        try {
+          if ((await fs.stat(path.join(target, m))).isDirectory() || m.endsWith(".md")) return true;
+        } catch {
+        }
+      }
+      return false;
+    })();
+    const roots = [];
+    for (const d of dirs) {
+      try {
+        const sub = await fs.readdir(d.path, { withFileTypes: true });
+        const has = await (async () => {
+          for (const m of markers) {
+            try {
+              if (sub.some((s) => s.name === m)) return true;
+            } catch {
+            }
+          }
+          return false;
+        })();
+        if (has) roots.push(d);
+      } catch {
+      }
+    }
+    let parent = path.dirname(target);
+    if (parent === target) parent = null;
+    return { path: target, parent, isWikiRoot, dirs, roots };
+  }
+  /**
    * Import an already-built wiki directory into the project: recursively copy
    * it over the project's wiki dir (merging; existing files are overwritten),
    * then harvest. Returns the harvested page count. Refuses to import from a
@@ -2004,6 +2051,15 @@ async function handleApiRequest(req, res, deps) {
       lint: p.lint ? { errorCount: p.lint.errorCount, warnCount: p.lint.warnCount } : null
     }));
     writeJson(res, 200, { ok: true, projects });
+    return;
+  }
+  if (method === "GET" && rest === "/browse") {
+    const target = url.searchParams.get("path") || os2.homedir();
+    try {
+      writeJson(res, 200, { ok: true, ...await deps.store.browseDir(target) });
+    } catch (err) {
+      writeJson(res, 400, { ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
     return;
   }
   if (method === "POST" && rest === "/project") {

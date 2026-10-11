@@ -13,7 +13,7 @@
 // contrast, stay in-process and never touch the socket.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { appendFileSync, readFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import os from 'node:os'
@@ -242,6 +242,26 @@ function activate(ctx: ContextLike, config?: Partial<Config>): void {
     const here = path.dirname(fileURLToPath(import.meta.url))
     builtinSkill = readFileSync(path.join(here, 'skills', 'llm-wiki.md'), 'utf-8')
     logInfo(`已内置 llm-wiki 技能（${builtinSkill.length} 字符，将注入构建会话）`)
+
+    // Auto-register the bundled skill into the host global skill dir
+    // (user-requested 2026-10-11): installing the plugin makes llm-wiki
+    // available to every DSH session, not only plugin-driven build sessions.
+    // The skill dir is <home>/.dsh/skills/<name>/SKILL.md; we write only when
+    // the content differs (version upgrades flow through on restart) and all
+    // writes are best-effort — a failure never blocks plugin activation.
+    try {
+      const skillsRoot = path.join(os.homedir(), '.dsh', 'skills', 'llm-wiki')
+      const skillFile = path.join(skillsRoot, 'SKILL.md')
+      let existing = ''
+      try { existing = readFileSync(skillFile, 'utf-8') } catch { /* first install */ }
+      if (existing !== builtinSkill) {
+        mkdirSync(skillsRoot, { recursive: true })
+        writeFileSync(skillFile, builtinSkill, 'utf-8')
+        logInfo(`已将内置 llm-wiki 技能注册到宿主技能目录: ${skillFile}`)
+      }
+    } catch (e) {
+      logWarn(`llm-wiki 技能注册到宿主技能目录失败（不影响插件功能）: ${e instanceof Error ? e.message : String(e)}`)
+    }
   } catch (e) {
     logWarn(`内置 llm-wiki 技能读取失败，会话将回退为提示词自述: ${e instanceof Error ? e.message : String(e)}`)
   }

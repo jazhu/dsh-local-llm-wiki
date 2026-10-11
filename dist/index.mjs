@@ -1,6 +1,6 @@
 // src/index.ts
 import { createServer } from "node:http";
-import { appendFileSync as appendFileSync2, readFileSync } from "node:fs";
+import { appendFileSync as appendFileSync2, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path4 from "node:path";
 import os2 from "node:os";
@@ -1457,6 +1457,22 @@ function activate(ctx, config) {
     const here = path4.dirname(fileURLToPath(import.meta.url));
     builtinSkill = readFileSync(path4.join(here, "skills", "llm-wiki.md"), "utf-8");
     logInfo(`\u5DF2\u5185\u7F6E llm-wiki \u6280\u80FD\uFF08${builtinSkill.length} \u5B57\u7B26\uFF0C\u5C06\u6CE8\u5165\u6784\u5EFA\u4F1A\u8BDD\uFF09`);
+    try {
+      const skillsRoot = path4.join(os2.homedir(), ".dsh", "skills", "llm-wiki");
+      const skillFile = path4.join(skillsRoot, "SKILL.md");
+      let existing = "";
+      try {
+        existing = readFileSync(skillFile, "utf-8");
+      } catch {
+      }
+      if (existing !== builtinSkill) {
+        mkdirSync(skillsRoot, { recursive: true });
+        writeFileSync(skillFile, builtinSkill, "utf-8");
+        logInfo(`\u5DF2\u5C06\u5185\u7F6E llm-wiki \u6280\u80FD\u6CE8\u518C\u5230\u5BBF\u4E3B\u6280\u80FD\u76EE\u5F55: ${skillFile}`);
+      }
+    } catch (e) {
+      logWarn(`llm-wiki \u6280\u80FD\u6CE8\u518C\u5230\u5BBF\u4E3B\u6280\u80FD\u76EE\u5F55\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u63D2\u4EF6\u529F\u80FD\uFF09: ${e instanceof Error ? e.message : String(e)}`);
+    }
   } catch (e) {
     logWarn(`\u5185\u7F6E llm-wiki \u6280\u80FD\u8BFB\u53D6\u5931\u8D25\uFF0C\u4F1A\u8BDD\u5C06\u56DE\u9000\u4E3A\u63D0\u793A\u8BCD\u81EA\u8FF0: ${e instanceof Error ? e.message : String(e)}`);
   }

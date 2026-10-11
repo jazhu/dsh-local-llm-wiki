@@ -543,7 +543,12 @@ function activate(ctx: ContextLike, config?: Partial<Config>): void {
           } catch {
             /* already closed */
           }
-          logInfo('Wiki 插件已卸载，释放 loopback 端口')
+          try {
+            store.dispose()
+          } catch {
+            /* ignore */
+          }
+          logInfo('Wiki 插件已卸载，释放 loopback 端口并关闭 SQLite')
         },
         'dsh-local-llm-wiki: loopback server',
       )

@@ -1,20 +1,23 @@
 // ProjectStore: the on-disk truth for dsh-local-llm-wiki.
 //
 // Layout (under the plugin data dir):
-//   registry.json                         — every WikiProject's metadata
-//   projects/<projectId>/raw/             — immutable uploaded source docs
+//   wiki.db                               — SQLite: project registry + settings (v0.4.2+)
+//   registry.json / settings.json         — legacy JSON, imported once then renamed *.imported
+//   projects/<projectId>/raw/             — immutable uploaded source docs (files, session cwd)
 //   projects/<projectId>/raw/.cache/manifest.json — SHA256 snapshot for incremental ingest
 //   projects/<projectId>/<wikiName>/      — the llm-wiki output layer (harvested)
 //
-// The registry is written atomically (tmp + rename). Pages are harvested from
-// the wiki dir by walking only the whitelisted subdirs so a stray file the
-// session dropped outside the wiki never enters the index.
+// The in-memory registry stays authoritative; every persist() writes through
+// to SQLite (transactional, best-effort). Pages are harvested from the wiki
+// dir by walking only the whitelisted subdirs so a stray file the session
+// dropped outside the wiki never enters the index.
 
 import { promises as fs } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
 import type { PluginSettings, RawDoc, WikiLintReport, WikiPage, WikiProject } from './types.ts'
 import { parseWikiPage } from './wiki-parse.ts'
+import { WikiDb, migrateLegacyJson, type SqliteLogger } from './store-db.ts'
 
 const REGISTRY_FILE = 'registry.json'
 const MANIFEST_FILE = 'manifest.json'
@@ -33,9 +36,11 @@ export class ProjectStore {
   /** projectId -> harvested pages (also what the index is built from). */
   private pages = new Map<string, WikiPage[]>()
   private loaded = false
+  private db: WikiDb
 
-  constructor(dataDir: string) {
+  constructor(dataDir: string, log?: SqliteLogger) {
     this.dataDir = dataDir
+    this.db = new WikiDb(dataDir, log)
   }
 
   private get projectsDir(): string {
@@ -67,17 +72,36 @@ export class ProjectStore {
     } catch {
       /* ignore */
     }
-    try {
-      const txt = await fs.readFile(path.join(this.dataDir, REGISTRY_FILE), 'utf-8')
-      const parsed = JSON.parse(txt) as Registry
-      if (Array.isArray(parsed.projects)) this.registry = parsed
-    } catch {
-      /* first boot: no registry yet */
+    // SQLite is the primary store. A one-time migration imports the legacy
+    // registry.json / settings.json (files renamed *.imported afterwards).
+    if (this.db.usable && this.db.isEmpty()) {
+      const mig = migrateLegacyJson(this.db, this.dataDir)
+      if (mig.projects || mig.settings) {
+        this.registry.projects = this.db.projectRows()
+      }
+    }
+    if (this.db.usable) {
+      this.registry.projects = this.db.projectRows()
+    } else {
+      // Broken db: fall back to the legacy JSON exactly like before.
+      try {
+        const txt = await fs.readFile(path.join(this.dataDir, REGISTRY_FILE), 'utf-8')
+        const parsed = JSON.parse(txt) as Registry
+        if (Array.isArray(parsed.projects)) this.registry = parsed
+      } catch {
+        /* first boot: no registry yet */
+      }
     }
     this.loaded = true
   }
 
   private async persist(): Promise<void> {
+    // Write-through to SQLite; the in-memory registry stays authoritative.
+    if (this.db.usable) {
+      this.db.putProjects(this.registry.projects)
+      return
+    }
+    // Fallback: legacy atomic JSON write (db unusable).
     try {
       await fs.mkdir(this.dataDir, { recursive: true })
       const target = path.join(this.dataDir, REGISTRY_FILE)
@@ -458,6 +482,8 @@ export class ProjectStore {
   }
 
   async readSettings(): Promise<PluginSettings> {
+    // Primary: SQLite. Fallback: legacy settings.json (db unusable).
+    if (this.db.usable) return this.db.settingRows()
     try {
       const txt = await fs.readFile(path.join(this.dataDir, SETTINGS_FILE), 'utf-8')
       const parsed = JSON.parse(txt) as PluginSettings
@@ -473,6 +499,10 @@ export class ProjectStore {
       if (v === undefined) continue
       ;(merged as Record<string, unknown>)[k] = v
     }
+    if (this.db.usable) {
+      this.db.putSettings(merged)
+      return merged
+    }
     try {
       await fs.mkdir(this.dataDir, { recursive: true })
       const target = path.join(this.dataDir, SETTINGS_FILE)
@@ -484,6 +514,12 @@ export class ProjectStore {
     }
     return merged
   }
+
+  /** Close the SQLite handle (plugin deactivate). */
+  dispose(): void {
+    this.db.dispose()
+  }
+
   async reloadPages(id: string): Promise<WikiPage[]> {
     try {
       return await this.harvest(id)

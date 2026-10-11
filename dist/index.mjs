@@ -1,6 +1,6 @@
 // src/index.ts
 import { createServer } from "node:http";
-import { appendFileSync as appendFileSync2, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync as appendFileSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path4 from "node:path";
 import os2 from "node:os";
@@ -124,6 +124,154 @@ function parseWikiPage(args) {
   };
 }
 
+// src/store-db.ts
+import { DatabaseSync } from "node:sqlite";
+import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
+var SCHEMA = `
+CREATE TABLE IF NOT EXISTS projects (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  status     TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  json       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects(updated_at);
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+`;
+var WikiDb = class {
+  db;
+  dbPath;
+  log;
+  constructor(dataDir, log = {}) {
+    this.dbPath = join(dataDir, "wiki.db");
+    this.log = log;
+    try {
+      mkdirSync(dataDir, { recursive: true });
+      this.db = new DatabaseSync(this.dbPath);
+      this.db.exec(SCHEMA);
+      this.db.exec("PRAGMA journal_mode = WAL;");
+    } catch (e) {
+      this.log.warn?.(`[dsh-local-llm-wiki] SQLite \u521D\u59CB\u5316\u5931\u8D25\uFF0C\u6570\u636E\u4EC5\u4FDD\u5B58\u5728\u5185\u5B58\uFF1A${e.message}`);
+      this.db = void 0;
+    }
+  }
+  get usable() {
+    return this.db !== void 0;
+  }
+  putProjects(projects) {
+    if (!this.db) return;
+    try {
+      this.db.exec("BEGIN");
+      this.db.prepare("DELETE FROM projects").run();
+      const ins = this.db.prepare(
+        "INSERT INTO projects (id, name, status, updated_at, json) VALUES (?, ?, ?, ?, ?)"
+      );
+      for (const p of projects) {
+        ins.run(p.id, p.name, p.status, p.updatedAt, JSON.stringify(p));
+      }
+      this.db.exec("COMMIT");
+    } catch (e) {
+      try {
+        this.db?.exec("ROLLBACK");
+      } catch {
+      }
+      this.log.warn?.(`[dsh-local-llm-wiki] \u9879\u76EE\u5199\u5165 SQLite \u5931\u8D25\uFF08\u5185\u5B58\u6570\u636E\u4E0D\u53D7\u5F71\u54CD\uFF09\uFF1A${e.message}`);
+    }
+  }
+  projectRows() {
+    if (!this.db) return [];
+    try {
+      const rows = this.db.prepare("SELECT json FROM projects").all();
+      return rows.map((r) => {
+        try {
+          return JSON.parse(r.json);
+        } catch {
+          return null;
+        }
+      }).filter((p) => !!p && typeof p.id === "string");
+    } catch {
+      return [];
+    }
+  }
+  putSettings(settings) {
+    if (!this.db) return;
+    try {
+      this.db.exec("BEGIN");
+      this.db.prepare("DELETE FROM settings").run();
+      const ins = this.db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)");
+      for (const [k, v] of Object.entries(settings)) {
+        if (v === void 0) continue;
+        ins.run(k, JSON.stringify(v));
+      }
+      this.db.exec("COMMIT");
+    } catch (e) {
+      try {
+        this.db?.exec("ROLLBACK");
+      } catch {
+      }
+      this.log.warn?.(`[dsh-local-llm-wiki] \u8BBE\u7F6E\u5199\u5165 SQLite \u5931\u8D25\uFF1A${e.message}`);
+    }
+  }
+  settingRows() {
+    if (!this.db) return {};
+    try {
+      const rows = this.db.prepare("SELECT key, value FROM settings").all();
+      const out = {};
+      for (const r of rows) {
+        try {
+          out[r.key] = JSON.parse(r.value);
+        } catch {
+        }
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  }
+  isEmpty() {
+    return this.projectRows().length === 0 && Object.keys(this.settingRows()).length === 0;
+  }
+  dispose() {
+    try {
+      this.db?.close();
+    } catch {
+    }
+    this.db = void 0;
+  }
+};
+function migrateLegacyJson(db, dataDir) {
+  const regFile = join(dataDir, "registry.json");
+  const setFile = join(dataDir, "settings.json");
+  if (!existsSync(regFile) && !existsSync(setFile)) return { projects: 0, settings: 0 };
+  let projects = [];
+  let settings = {};
+  try {
+    if (existsSync(regFile)) {
+      const parsed = JSON.parse(readFileSync(regFile, "utf-8"));
+      projects = Array.isArray(parsed?.projects) ? parsed.projects.filter((p) => p && typeof p.id === "string") : [];
+    }
+    if (existsSync(setFile)) {
+      settings = JSON.parse(readFileSync(setFile, "utf-8"));
+      if (!settings || typeof settings !== "object") settings = {};
+    }
+  } catch {
+    return { projects: 0, settings: 0 };
+  }
+  db.putProjects(projects);
+  db.putSettings(settings);
+  for (const f of [regFile, setFile]) {
+    try {
+      if (existsSync(f)) renameSync(f, f + ".imported");
+    } catch {
+    }
+  }
+  return { projects: projects.length, settings: Object.keys(settings).length };
+}
+
 // src/store.ts
 var REGISTRY_FILE = "registry.json";
 var MANIFEST_FILE = "manifest.json";
@@ -135,8 +283,10 @@ var ProjectStore = class {
   /** projectId -> harvested pages (also what the index is built from). */
   pages = /* @__PURE__ */ new Map();
   loaded = false;
-  constructor(dataDir) {
+  db;
+  constructor(dataDir, log) {
     this.dataDir = dataDir;
+    this.db = new WikiDb(dataDir, log);
   }
   get projectsDir() {
     return path.join(this.dataDir, "projects");
@@ -161,15 +311,29 @@ var ProjectStore = class {
       await fs.mkdir(this.projectsDir, { recursive: true });
     } catch {
     }
-    try {
-      const txt = await fs.readFile(path.join(this.dataDir, REGISTRY_FILE), "utf-8");
-      const parsed = JSON.parse(txt);
-      if (Array.isArray(parsed.projects)) this.registry = parsed;
-    } catch {
+    if (this.db.usable && this.db.isEmpty()) {
+      const mig = migrateLegacyJson(this.db, this.dataDir);
+      if (mig.projects || mig.settings) {
+        this.registry.projects = this.db.projectRows();
+      }
+    }
+    if (this.db.usable) {
+      this.registry.projects = this.db.projectRows();
+    } else {
+      try {
+        const txt = await fs.readFile(path.join(this.dataDir, REGISTRY_FILE), "utf-8");
+        const parsed = JSON.parse(txt);
+        if (Array.isArray(parsed.projects)) this.registry = parsed;
+      } catch {
+      }
     }
     this.loaded = true;
   }
   async persist() {
+    if (this.db.usable) {
+      this.db.putProjects(this.registry.projects);
+      return;
+    }
     try {
       await fs.mkdir(this.dataDir, { recursive: true });
       const target = path.join(this.dataDir, REGISTRY_FILE);
@@ -514,6 +678,7 @@ var ProjectStore = class {
     return resolved;
   }
   async readSettings() {
+    if (this.db.usable) return this.db.settingRows();
     try {
       const txt = await fs.readFile(path.join(this.dataDir, SETTINGS_FILE), "utf-8");
       const parsed = JSON.parse(txt);
@@ -528,6 +693,10 @@ var ProjectStore = class {
       if (v === void 0) continue;
       merged[k] = v;
     }
+    if (this.db.usable) {
+      this.db.putSettings(merged);
+      return merged;
+    }
     try {
       await fs.mkdir(this.dataDir, { recursive: true });
       const target = path.join(this.dataDir, SETTINGS_FILE);
@@ -537,6 +706,10 @@ var ProjectStore = class {
     } catch {
     }
     return merged;
+  }
+  /** Close the SQLite handle (plugin deactivate). */
+  dispose() {
+    this.db.dispose();
   }
   async reloadPages(id) {
     try {
@@ -1455,18 +1628,18 @@ function activate(ctx, config) {
   let builtinSkill = "";
   try {
     const here = path4.dirname(fileURLToPath(import.meta.url));
-    builtinSkill = readFileSync(path4.join(here, "skills", "llm-wiki.md"), "utf-8");
+    builtinSkill = readFileSync2(path4.join(here, "skills", "llm-wiki.md"), "utf-8");
     logInfo(`\u5DF2\u5185\u7F6E llm-wiki \u6280\u80FD\uFF08${builtinSkill.length} \u5B57\u7B26\uFF0C\u5C06\u6CE8\u5165\u6784\u5EFA\u4F1A\u8BDD\uFF09`);
     try {
       const skillsRoot = path4.join(os2.homedir(), ".dsh", "skills", "llm-wiki");
       const skillFile = path4.join(skillsRoot, "SKILL.md");
       let existing = "";
       try {
-        existing = readFileSync(skillFile, "utf-8");
+        existing = readFileSync2(skillFile, "utf-8");
       } catch {
       }
       if (existing !== builtinSkill) {
-        mkdirSync(skillsRoot, { recursive: true });
+        mkdirSync2(skillsRoot, { recursive: true });
         writeFileSync(skillFile, builtinSkill, "utf-8");
         logInfo(`\u5DF2\u5C06\u5185\u7F6E llm-wiki \u6280\u80FD\u6CE8\u518C\u5230\u5BBF\u4E3B\u6280\u80FD\u76EE\u5F55: ${skillFile}`);
       }
@@ -1727,7 +1900,11 @@ function activate(ctx, config) {
             server.close();
           } catch {
           }
-          logInfo("Wiki \u63D2\u4EF6\u5DF2\u5378\u8F7D\uFF0C\u91CA\u653E loopback \u7AEF\u53E3");
+          try {
+            store.dispose();
+          } catch {
+          }
+          logInfo("Wiki \u63D2\u4EF6\u5DF2\u5378\u8F7D\uFF0C\u91CA\u653E loopback \u7AEF\u53E3\u5E76\u5173\u95ED SQLite");
         },
         "dsh-local-llm-wiki: loopback server"
       );

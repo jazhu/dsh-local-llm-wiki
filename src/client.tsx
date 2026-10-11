@@ -179,10 +179,13 @@ function ToastView(props: { toast: { text: string; kind: 'err' | 'ok' } | null; 
     {
       style: {
         position: 'fixed',
-        top: 12,
-        right: 12,
+        top: '40%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
         zIndex: 99999,
-        maxWidth: 360,
+        maxWidth: 420,
+        minWidth: 220,
+        textAlign: 'center',
         padding: '8px 12px',
         borderRadius: 8,
         fontSize: 12,

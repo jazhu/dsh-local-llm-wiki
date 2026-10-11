@@ -27,17 +27,14 @@
 
 ## 安装（DSH 桌面版 profile）
 
-1. 克隆本仓库到本地，然后构建（`dist/` 不入库，必须先构建）：
+> **v0.3.0 起 `dist/` 已随仓库分发**：无论 `link:` 还是 `github:` 方式安装，都无需在目标机器构建；只要 `pnpm install` 拉到 v0.3.0 及以上（或最新 master），`dist/index.mjs`、`client.js`、`skills/`、`locale/` 齐全。
+>
+> 若仍出现「failed to import / 启用失败」：
+> 1. 先确认安装目录里 `dist/index.mjs` 存在（github: 方式须让 pnpm 重新拉取——在 profile 目录执行 `pnpm install --force` 或删除 `node_modules/dsh-local-llm-wiki` 后重新 `pnpm install`，pnpm 可能缓存旧 commit）；
+> 2. `dist/index.mjs` 存在仍报错时，启动 DSH 的终端日志里会有 import 的具体异常（如缺 Node 内置模块、语法不支持——目标机器 DSH 的 Node 版本须 ≥22），把该行报错反馈给作者；
+> 3. `link:` 方式安装的机器若想本地构建，仍可 `pnpm install && pnpm run build`（`files`/`.gitignore` 已不排除 dist，构建只是刷新产物）。
 
-   ```bash
-   pnpm install
-   pnpm run build
-   ```
-
-   > 构建后 `dist/` 必须包含：`index.mjs`、`client.js`、`skills/llm-wiki.md`、
-   > `locale/zh.json`、`locale/en.json`。若在别的机器上安装时提示
-   > 「no such file or directory, scandir ...\\locale」，说明 `dist/` 缺失或
-   > 不完整——在本机重新执行 `pnpm run build` 即可。
+1. 克隆本仓库到本地（或直接用 `github:jazhu/dsh-local-llm-wiki` 作为依赖，无需克隆）：
 
 2. 在 DSH profile（`~/.dsh/profiles/desktop`）的 `package.json` 中注册：
 

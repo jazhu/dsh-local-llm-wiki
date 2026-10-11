@@ -1821,6 +1821,21 @@ async function handleApiRequest(req, res, deps) {
       return;
     }
     const proj = await deps.store.createProject({ name: name2, domain: body.domain, wikiName: body.wikiName });
+    const importDir = typeof body.importDir === "string" ? body.importDir.trim() : "";
+    if (importDir) {
+      try {
+        const n = await deps.store.importWikiDir(proj.id, importDir);
+        const pages = deps.store.getPages(proj.id);
+        deps.index.addProject(proj.id, proj.name, pages);
+        deps.store.setLint(proj.id, lintPages(pages));
+        await deps.store.updateProject(proj.id, { status: "ready", error: void 0 });
+        writeJson(res, 200, { ok: true, project: proj, importedPages: n });
+      } catch (err) {
+        await deps.store.deleteProject(proj.id);
+        writeJson(res, 400, { ok: false, error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
     writeJson(res, 200, { ok: true, project: proj });
     return;
   }

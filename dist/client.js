@@ -219,14 +219,24 @@ function ProjectsTab(props) {
   const { projects, refresh, creating, setCreating, showToast } = props;
   const [newName, setNewName] = (0, import_react.useState)("");
   const [newDomain, setNewDomain] = (0, import_react.useState)("");
+  const [importDir, setImportDir] = (0, import_react.useState)("");
   const create = async () => {
     if (!newName.trim()) return;
     setCreating(true);
     try {
-      await apiPostJson("/project", { name: newName.trim(), domain: newDomain.trim() });
+      const r = await apiPostJson("/project", {
+        name: newName.trim(),
+        domain: newDomain.trim(),
+        ...importDir.trim() ? { importDir: importDir.trim() } : {}
+      });
+      if (!r.ok) throw new Error(r.error || "\u521B\u5EFA\u5931\u8D25");
+      if (r.importedPages !== void 0) showToast(`\u5DF2\u5BFC\u5165\u300C${newName.trim()}\u300D\uFF08${r.importedPages} \u9875\uFF09\u2014\u2014\u8DF3\u8FC7\u6784\u5EFA`, "ok");
       setNewName("");
       setNewDomain("");
+      setImportDir("");
       await refresh();
+    } catch (e) {
+      showToast(String(e?.message || e), "err");
     } finally {
       setCreating(false);
     }
@@ -244,7 +254,13 @@ function ProjectsTab(props) {
         (0, import_react.createElement)("input", { className: "dsw-input", placeholder: "\u77E5\u8BC6\u5E93\u540D\u79F0", value: newName, onChange: (e) => setNewName(e.target.value), style: { maxWidth: 220 } }),
         (0, import_react.createElement)("input", { className: "dsw-input", placeholder: "\u9886\u57DF\u8BF4\u660E\uFF08\u53EF\u9009\uFF09", value: newDomain, onChange: (e) => setNewDomain(e.target.value), style: { maxWidth: 260 } }),
         (0, import_react.createElement)("button", { className: "dsw-btn", disabled: creating, onClick: create }, "\u521B\u5EFA")
-      )
+      ),
+      (0, import_react.createElement)(
+        "div",
+        { className: "dsw-row", style: { marginTop: 6 } },
+        (0, import_react.createElement)("input", { className: "dsw-input", placeholder: "\u5DF2\u6709 wiki \u76EE\u5F55\u7EDD\u5BF9\u8DEF\u5F84\uFF08\u53EF\u9009\uFF0C\u586B\u4E86\u5373\u5BFC\u5165\u8BE5\u5DF2\u6784\u5EFA\u77E5\u8BC6\u5E93\uFF0C\u514D\u91CD\u590D\u6784\u5EFA\uFF1B\u5982 D:\\data\\hillstone\\wiki\uFF09", value: importDir, onChange: (e) => setImportDir(e.target.value), style: { flex: 1 } })
+      ),
+      importDir.trim() ? (0, import_react.createElement)("div", { className: "dsw-muted", style: { marginTop: 4 } }, "\u26A0 \u5BFC\u5165\u8981\u6C42\u76EE\u5F55\u542B SCHEMA.md / entities / concepts \u7B49\u6807\u51C6 wiki \u7ED3\u6784\uFF1B\u76EE\u5F55\u4E0D\u5B58\u5728\u6216\u7ED3\u6784\u4E0D\u7B26\u4F1A\u5728\u521B\u5EFA\u65F6\u62A5\u9519\u5E76\u81EA\u52A8\u56DE\u9000\u3002") : null
     ),
     projects.length === 0 ? (0, import_react.createElement)("div", { className: "dsw-muted" }, "\u8FD8\u6CA1\u6709\u77E5\u8BC6\u5E93\uFF0C\u5148\u521B\u5EFA\u4E00\u4E2A\u518D\u4E0A\u4F20\u6587\u6863\u3002") : (0, import_react.createElement)("div", { className: "dsw-list" }, projects.map((p) => (0, import_react.createElement)(ProjectCard, { key: p.id, project: p, refresh, showToast })))
   );

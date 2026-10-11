@@ -677,7 +677,7 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, deps:
     return
   }
 
-  // POST /project  { name, domain?, wikiName? }
+  // POST /project  { name, domain?, wikiName?, importDir? }
   if (method === 'POST' && rest === '/project') {
     const body = JSON.parse((await readBody(req)).toString('utf-8') || '{}')
     const name = String(body.name || '').trim()
@@ -686,6 +686,25 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, deps:
       return
     }
     const proj = await deps.store.createProject({ name, domain: body.domain, wikiName: body.wikiName })
+    // Optional: import an already-built wiki directory at creation time
+    // (user-requested 2026-10-11: avoid rebuilding knowledge bases that
+    // already exist on disk). On failure the project is removed again so no
+    // empty shell is left behind; the error text goes back to the panel.
+    const importDir = typeof body.importDir === 'string' ? body.importDir.trim() : ''
+    if (importDir) {
+      try {
+        const n = await deps.store.importWikiDir(proj.id, importDir)
+        const pages = deps.store.getPages(proj.id)
+        deps.index.addProject(proj.id, proj.name, pages)
+        deps.store.setLint(proj.id, lintPages(pages))
+        await deps.store.updateProject(proj.id, { status: 'ready', error: undefined })
+        writeJson(res, 200, { ok: true, project: proj, importedPages: n })
+      } catch (err) {
+        await deps.store.deleteProject(proj.id)
+        writeJson(res, 400, { ok: false, error: err instanceof Error ? err.message : String(err) })
+      }
+      return
+    }
     writeJson(res, 200, { ok: true, project: proj })
     return
   }

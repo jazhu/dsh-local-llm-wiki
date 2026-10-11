@@ -263,15 +263,27 @@ function ProjectsTab(props: { projects: Project[]; refresh: () => void; creating
   const { projects, refresh, creating, setCreating, showToast } = props
   const [newName, setNewName] = useState('')
   const [newDomain, setNewDomain] = useState('')
+  // Optional import of an already-built wiki dir at creation time
+  // (user-requested 2026-10-11: skip re-building existing knowledge bases).
+  const [importDir, setImportDir] = useState('')
 
   const create = async () => {
     if (!newName.trim()) return
     setCreating(true)
     try {
-      await apiPostJson('/project', { name: newName.trim(), domain: newDomain.trim() })
+      const r = await apiPostJson<{ ok: boolean; error?: string; importedPages?: number }>('/project', {
+        name: newName.trim(),
+        domain: newDomain.trim(),
+        ...(importDir.trim() ? { importDir: importDir.trim() } : {}),
+      })
+      if (!r.ok) throw new Error(r.error || '创建失败')
+      if (r.importedPages !== undefined) showToast(`已导入「${newName.trim()}」（${r.importedPages} 页）——跳过构建`, 'ok')
       setNewName('')
       setNewDomain('')
+      setImportDir('')
       await refresh()
+    } catch (e) {
+      showToast(String((e as Error)?.message || e), 'err')
     } finally {
       setCreating(false)
     }
@@ -289,6 +301,12 @@ function ProjectsTab(props: { projects: Project[]; refresh: () => void; creating
         h('input', { className: 'dsw-input', placeholder: '领域说明（可选）', value: newDomain, onChange: (e: any) => setNewDomain(e.target.value), style: { maxWidth: 260 } }),
         h('button', { className: 'dsw-btn', disabled: creating, onClick: create }, '创建'),
       ),
+      h('div', { className: 'dsw-row', style: { marginTop: 6 } },
+        h('input', { className: 'dsw-input', placeholder: '已有 wiki 目录绝对路径（可选，填了即导入该已构建知识库，免重复构建；如 D:\\data\\hillstone\\wiki）', value: importDir, onChange: (e: any) => setImportDir(e.target.value), style: { flex: 1 } }),
+      ),
+      importDir.trim()
+        ? h('div', { className: 'dsw-muted', style: { marginTop: 4 } }, '⚠ 导入要求目录含 SCHEMA.md / entities / concepts 等标准 wiki 结构；目录不存在或结构不符会在创建时报错并自动回退。')
+        : null,
     ),
     projects.length === 0
       ? h('div', { className: 'dsw-muted' }, '还没有知识库，先创建一个再上传文档。')

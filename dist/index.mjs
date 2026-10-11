@@ -127,6 +127,7 @@ function parseWikiPage(args) {
 // src/store.ts
 var REGISTRY_FILE = "registry.json";
 var MANIFEST_FILE = "manifest.json";
+var SETTINGS_FILE = "settings.json";
 var HARVEST_KINDS = ["entities", "concepts", "comparisons", "queries"];
 var ProjectStore = class {
   dataDir;
@@ -498,6 +499,45 @@ var ProjectStore = class {
     return stalled;
   }
   /** Re-load harvested pages from disk after a restart (index rebuild). */
+  // ---- settings persistence (2026-10-11) ----------------------------------
+  // The settings page previously mutated only the in-memory runtime config, so
+  // every restart (or host re-activation) silently reset workspace/model to
+  // defaults — the "settings revert themselves" bug. Persist to
+  // <dataDir>/settings.json and overlay on top of the resolved config.
+  /** Overlay persisted settings onto a resolved config (mutates and returns it). */
+  async loadSettingsInto(resolved) {
+    const saved = await this.readSettings();
+    if (saved.ingestWorkspaceId !== void 0) resolved.ingestWorkspaceId = saved.ingestWorkspaceId;
+    if (saved.ingestModel !== void 0) resolved.ingestModel = saved.ingestModel;
+    if (saved.ingestAgentPreset !== void 0) resolved.ingestAgentPreset = saved.ingestAgentPreset;
+    if (saved.ingestPermissionPreset !== void 0) resolved.ingestPermissionPreset = saved.ingestPermissionPreset;
+    return resolved;
+  }
+  async readSettings() {
+    try {
+      const txt = await fs.readFile(path.join(this.dataDir, SETTINGS_FILE), "utf-8");
+      const parsed = JSON.parse(txt);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  async saveSettings(patch) {
+    const merged = { ...await this.readSettings() };
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === void 0) continue;
+      merged[k] = v;
+    }
+    try {
+      await fs.mkdir(this.dataDir, { recursive: true });
+      const target = path.join(this.dataDir, SETTINGS_FILE);
+      const tmp = target + ".tmp";
+      await fs.writeFile(tmp, JSON.stringify(merged, null, 2), "utf-8");
+      await fs.rename(tmp, target);
+    } catch {
+    }
+    return merged;
+  }
   async reloadPages(id) {
     try {
       return await this.harvest(id);
@@ -1352,6 +1392,15 @@ function activate(ctx, config) {
   let workspaceRegistry;
   void (async () => {
     await store.load();
+    try {
+      await store.loadSettingsInto(resolved);
+      const s = await store.readSettings();
+      if (s.ingestWorkspaceId !== void 0 || s.ingestModel !== void 0) {
+        logInfo(`\u5DF2\u6062\u590D\u6301\u4E45\u5316\u8BBE\u7F6E: workspace=${s.ingestWorkspaceId ?? "(\u9ED8\u8BA4)"} model=${s.ingestModel ?? "(\u9ED8\u8BA4)"}`);
+      }
+    } catch (e) {
+      logWarn(`\u6062\u590D\u6301\u4E45\u5316\u8BBE\u7F6E\u5931\u8D25\uFF08\u4F7F\u7528\u5BBF\u4E3B\u914D\u7F6E\uFF09: ${e instanceof Error ? e.message : String(e)}`);
+    }
     for (const p of store.list()) {
       if (p.status === "designing") {
         try {
@@ -1496,6 +1545,10 @@ function activate(ctx, config) {
     saveSettings: (patch) => {
       if (patch.ingestWorkspaceId !== void 0) resolved.ingestWorkspaceId = patch.ingestWorkspaceId.trim();
       if (patch.ingestModel !== void 0) resolved.ingestModel = patch.ingestModel.trim();
+      void store.saveSettings({
+        ingestWorkspaceId: patch.ingestWorkspaceId?.trim(),
+        ingestModel: patch.ingestModel?.trim()
+      });
       return resolved;
     },
     logInfo,

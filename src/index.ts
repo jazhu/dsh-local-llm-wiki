@@ -162,6 +162,18 @@ function activate(ctx: ContextLike, config?: Partial<Config>): void {
   // ---- bootstrap: load store, rebuild index, recover drafts, mark stalled ----------------
   void (async () => {
     await store.load()
+    // Settings persistence (2026-10-11): overlay the saved settings-page values
+    // onto the runtime config so they survive restarts (the "settings revert"
+    // bug — runtime config was previously the only copy).
+    try {
+      await store.loadSettingsInto(resolved)
+      const s = await store.readSettings()
+      if (s.ingestWorkspaceId !== undefined || s.ingestModel !== undefined) {
+        logInfo(`已恢复持久化设置: workspace=${s.ingestWorkspaceId ?? '(默认)'} model=${s.ingestModel ?? '(默认)'}`)
+      }
+    } catch (e) {
+      logWarn(`恢复持久化设置失败（使用宿主配置）: ${e instanceof Error ? e.message : String(e)}`)
+    }
     // A project stuck in `designing` whose SCHEMA.md already landed (session
     // finished the design just before a restart) must NOT be marked failed —
     // recover it to `awaiting-schema-confirm` first, then mark the rest stalled.
@@ -327,6 +339,12 @@ function activate(ctx: ContextLike, config?: Partial<Config>): void {
     saveSettings: (patch: { ingestWorkspaceId?: string; ingestModel?: string }) => {
       if (patch.ingestWorkspaceId !== undefined) resolved.ingestWorkspaceId = patch.ingestWorkspaceId.trim()
       if (patch.ingestModel !== undefined) resolved.ingestModel = patch.ingestModel.trim()
+      // Persist immediately (2026-10-11): fire-and-forget — the runtime copy is
+      // updated synchronously, the disk copy lands in <dataDir>/settings.json.
+      void store.saveSettings({
+        ingestWorkspaceId: patch.ingestWorkspaceId?.trim(),
+        ingestModel: patch.ingestModel?.trim(),
+      })
       return resolved
     },
     logInfo,

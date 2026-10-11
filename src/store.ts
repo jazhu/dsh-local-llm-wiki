@@ -13,11 +13,12 @@
 import { promises as fs } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
-import type { RawDoc, WikiLintReport, WikiPage, WikiProject } from './types.ts'
+import type { PluginSettings, RawDoc, WikiLintReport, WikiPage, WikiProject } from './types.ts'
 import { parseWikiPage } from './wiki-parse.ts'
 
 const REGISTRY_FILE = 'registry.json'
 const MANIFEST_FILE = 'manifest.json'
+const SETTINGS_FILE = 'settings.json'
 
 interface Registry {
   version: number
@@ -439,6 +440,50 @@ export class ProjectStore {
   }
 
   /** Re-load harvested pages from disk after a restart (index rebuild). */
+
+  // ---- settings persistence (2026-10-11) ----------------------------------
+  // The settings page previously mutated only the in-memory runtime config, so
+  // every restart (or host re-activation) silently reset workspace/model to
+  // defaults — the "settings revert themselves" bug. Persist to
+  // <dataDir>/settings.json and overlay on top of the resolved config.
+
+  /** Overlay persisted settings onto a resolved config (mutates and returns it). */
+  async loadSettingsInto<T extends { ingestWorkspaceId: string; ingestModel: string; ingestAgentPreset: string; ingestPermissionPreset: string }>(resolved: T): Promise<T> {
+    const saved = await this.readSettings()
+    if (saved.ingestWorkspaceId !== undefined) resolved.ingestWorkspaceId = saved.ingestWorkspaceId
+    if (saved.ingestModel !== undefined) resolved.ingestModel = saved.ingestModel
+    if (saved.ingestAgentPreset !== undefined) resolved.ingestAgentPreset = saved.ingestAgentPreset
+    if (saved.ingestPermissionPreset !== undefined) resolved.ingestPermissionPreset = saved.ingestPermissionPreset
+    return resolved
+  }
+
+  async readSettings(): Promise<PluginSettings> {
+    try {
+      const txt = await fs.readFile(path.join(this.dataDir, SETTINGS_FILE), 'utf-8')
+      const parsed = JSON.parse(txt) as PluginSettings
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+
+  async saveSettings(patch: PluginSettings): Promise<PluginSettings> {
+    const merged = { ...(await this.readSettings()) }
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined) continue
+      ;(merged as Record<string, unknown>)[k] = v
+    }
+    try {
+      await fs.mkdir(this.dataDir, { recursive: true })
+      const target = path.join(this.dataDir, SETTINGS_FILE)
+      const tmp = target + '.tmp'
+      await fs.writeFile(tmp, JSON.stringify(merged, null, 2), 'utf-8')
+      await fs.rename(tmp, target)
+    } catch {
+      /* best-effort */
+    }
+    return merged
+  }
   async reloadPages(id: string): Promise<WikiPage[]> {
     try {
       return await this.harvest(id)

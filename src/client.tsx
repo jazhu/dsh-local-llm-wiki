@@ -152,6 +152,54 @@ function statusBadgeClass(s: ProjectStatus): string {
   return 'dsw-badge'
 }
 
+// ---- toast (user-requested 2026-10-11) --------------------------------------
+// Transient error/success notification: floats above the panel and fades away
+// on its own after a few seconds instead of occupying a permanent row.
+
+const TOAST_MS = 5000
+
+function useToast(): { toast: { text: string; kind: 'err' | 'ok' } | null; showToast: (text: string, kind?: 'err' | 'ok') => void; clearToast: () => void } {
+  const [toast, setToast] = useState<{ text: string; kind: 'err' | 'ok' } | null>(null)
+  const showToast = useCallback((text: string, kind: 'err' | 'ok' = 'err') => {
+    setToast({ text, kind })
+  }, [])
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), TOAST_MS)
+    return () => clearTimeout(t)
+  }, [toast])
+  return { toast, showToast, clearToast: () => setToast(null) }
+}
+
+function ToastView(props: { toast: { text: string; kind: 'err' | 'ok' } | null; onClose: () => void }): ReactNode {
+  const { toast, onClose } = props
+  if (!toast) return null
+  return h(
+    'div',
+    {
+      style: {
+        position: 'fixed',
+        top: 12,
+        right: 12,
+        zIndex: 99999,
+        maxWidth: 360,
+        padding: '8px 12px',
+        borderRadius: 8,
+        fontSize: 12,
+        lineHeight: 1.5,
+        boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
+        background: toast.kind === 'err' ? '#fef2f2' : '#f0fdf4',
+        color: toast.kind === 'err' ? '#b91c1c' : '#15803d',
+        border: toast.kind === 'err' ? '1px solid #fca5a5' : '1px solid #86efac',
+        cursor: 'pointer',
+      },
+      onClick: onClose,
+      title: '点击关闭',
+    },
+    toast.text,
+  )
+}
+
 const POLL_MS = 2000
 
 function Panel(): ReactNode {
@@ -159,6 +207,7 @@ function Panel(): ReactNode {
   const [projects, setProjects] = useState<Project[]>([])
   const [err, setErr] = useState('')
   const [creating, setCreating] = useState(false)
+  const { toast, showToast, clearToast } = useToast()
 
   const refresh = useCallback(async () => {
     try {
@@ -166,9 +215,11 @@ function Panel(): ReactNode {
       setProjects(data.projects)
       setErr('')
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
+      const msg = e instanceof Error ? e.message : String(e)
+      setErr(msg)
+      showToast('API 错误：' + msg, 'err')
     }
-  }, [])
+  }, [showToast])
 
   useEffect(() => {
     refresh()
@@ -195,17 +246,18 @@ function Panel(): ReactNode {
       h('div', { className: 'dsw-tab' + (tab === 'settings' ? ' dsw-active' : ''), onClick: () => setTab('settings') }, '设置'),
     ),
     err ? h('div', { className: 'dsw-err' }, 'API 错误：', err) : null,
-    tab === 'projects' && h(ProjectsTab, { projects, refresh, creating, setCreating }),
+    tab === 'projects' && h(ProjectsTab, { projects, refresh, creating, setCreating, showToast }),
     tab === 'search' && h(SearchTab, {}),
     tab === 'status' && h(StatusTab, { projects }),
-    tab === 'settings' && h(SettingsTab, {}),
+    tab === 'settings' && h(SettingsTab, { showToast }),
+    h(ToastView, { toast, onClose: clearToast }),
   )
 }
 
 // ---- projects tab ----------------------------------------------------------
 
-function ProjectsTab(props: { projects: Project[]; refresh: () => void; creating: boolean; setCreating: (b: boolean) => void }): ReactNode {
-  const { projects, refresh, creating, setCreating } = props
+function ProjectsTab(props: { projects: Project[]; refresh: () => void; creating: boolean; setCreating: (b: boolean) => void; showToast: (t: string, k?: 'err' | 'ok') => void }): ReactNode {
+  const { projects, refresh, creating, setCreating, showToast } = props
   const [newName, setNewName] = useState('')
   const [newDomain, setNewDomain] = useState('')
 
@@ -237,26 +289,24 @@ function ProjectsTab(props: { projects: Project[]; refresh: () => void; creating
     ),
     projects.length === 0
       ? h('div', { className: 'dsw-muted' }, '还没有知识库，先创建一个再上传文档。')
-      : h('div', { className: 'dsw-list' }, projects.map((p) => h(ProjectCard, { key: p.id, project: p, refresh }))),
+      : h('div', { className: 'dsw-list' }, projects.map((p) => h(ProjectCard, { key: p.id, project: p, refresh, showToast }))),
   )
 }
 
-function ProjectCard(props: { project: Project; refresh: () => void }): ReactNode {
-  const { project: p, refresh } = props
+function ProjectCard(props: { project: Project; refresh: () => void; showToast: (t: string, k?: 'err' | 'ok') => void }): ReactNode {
+  const { project: p, refresh, showToast } = props
   const [drag, setDrag] = useState(false)
   const [localErr, setLocalErr] = useState('')
   const [busy, setBusy] = useState(false)
-  // Dismissed persistent project error (user-requested 2026-10-10): stale
-  // errors used to linger forever until a rebuild succeeded. Track the exact
-  // message the user closed; a NEW different error still shows. Auto-dismiss
-  // after 60s so transient failures fade on their own.
-  const [dismissedErr, setDismissedErr] = useState<string | null>(null)
+  // Transient project errors (user-requested 2026-10-11): action failures and
+  // build errors pop as a floating toast that fades after TOAST_MS instead of
+  // a permanent inline row. The v0.2.1 dismissedErr mechanism is retired —
+  // toasts auto-vanish, so no dismissed-state tracking is needed. Persisted
+  // p.error still marks the badge/project status; it just no longer renders
+  // as an always-visible banner.
   useEffect(() => {
-    if (!p.error) { setDismissedErr(null); return }
-    if (dismissedErr === null) return
-    const t = setTimeout(() => setDismissedErr(null), 60000)
-    return () => clearTimeout(t)
-  }, [p.error])
+    if (p.error) showToast('错误：' + p.error, 'err')
+  }, [p.error, showToast])
   const [schemaDraft, setSchemaDraft] = useState('')
   const [uploads, setUploads] = useState<UploadInfo[]>([])
   const [pages, setPages] = useState<PageInfo[]>([])
@@ -293,7 +343,7 @@ function ProjectCard(props: { project: Project; refresh: () => void }): ReactNod
       await refresh()
       await loadDetail()
     } catch (e) {
-      setLocalErr(e instanceof Error ? e.message : String(e))
+      setLocalErr(String((e as Error)?.message || e)); showToast(String((e as Error)?.message || e), "err")
     } finally {
       setBusy(false)
     }
@@ -305,7 +355,7 @@ function ProjectCard(props: { project: Project; refresh: () => void }): ReactNod
       await apiPostJson(`/design/${p.id}`, {})
       await refresh()
     } catch (e) {
-      setLocalErr(e instanceof Error ? e.message : String(e))
+      setLocalErr(String((e as Error)?.message || e)); showToast(String((e as Error)?.message || e), "err")
     } finally {
       setBusy(false)
     }
@@ -317,7 +367,7 @@ function ProjectCard(props: { project: Project; refresh: () => void }): ReactNod
       await apiPostJson(`/schema/${p.id}`, { schema: schemaDraft })
       await refresh()
     } catch (e) {
-      setLocalErr(e instanceof Error ? e.message : String(e))
+      setLocalErr(String((e as Error)?.message || e)); showToast(String((e as Error)?.message || e), "err")
     } finally {
       setBusy(false)
     }
@@ -329,7 +379,7 @@ function ProjectCard(props: { project: Project; refresh: () => void }): ReactNod
       await apiPostJson(`/ingest/${p.id}`, {})
       await refresh()
     } catch (e) {
-      setLocalErr(e instanceof Error ? e.message : String(e))
+      setLocalErr(String((e as Error)?.message || e)); showToast(String((e as Error)?.message || e), "err")
     } finally {
       setBusy(false)
     }
@@ -359,7 +409,7 @@ function ProjectCard(props: { project: Project; refresh: () => void }): ReactNod
       await apiPostJson(`/build/${p.id}`, {})
       await refresh()
     } catch (e) {
-      setLocalErr(e instanceof Error ? e.message : String(e))
+      setLocalErr(String((e as Error)?.message || e)); showToast(String((e as Error)?.message || e), "err")
     } finally {
       setBusy(false)
     }
@@ -374,7 +424,7 @@ function ProjectCard(props: { project: Project; refresh: () => void }): ReactNod
       await apiPostJson(`/lintfix/${p.id}`, {})
       await refresh()
     } catch (e) {
-      setLocalErr(e instanceof Error ? e.message : String(e))
+      setLocalErr(String((e as Error)?.message || e)); showToast(String((e as Error)?.message || e), "err")
     } finally {
       setBusy(false)
     }
@@ -393,12 +443,6 @@ function ProjectCard(props: { project: Project; refresh: () => void }): ReactNod
       h('button', { className: 'dsw-btn dsw-ghost', style: { marginLeft: 'auto' }, disabled: busy, onClick: del }, '删除'),
     ),
     p.domain ? h('div', { className: 'dsw-muted' }, p.domain) : null,
-    p.error && dismissedErr !== p.error
-      ? h('div', { className: 'dsw-err', style: { display: 'flex', alignItems: 'center', gap: 8 } },
-          h('span', { style: { flex: 1 } }, '错误：', p.error),
-          h('button', { className: 'dsw-btn dsw-ghost', style: { padding: '0 8px' }, onClick: () => p.error && setDismissedErr(p.error), title: '关闭（60 秒后自动恢复显示能力，新错误仍会出现）' }, '✕'),
-        )
-      : null,
 
     // Upload zone
     h(
@@ -493,7 +537,7 @@ function ProjectCard(props: { project: Project; refresh: () => void }): ReactNod
                       if (!r.ok) throw new Error(r.error || '删除失败')
                       await loadDetail()
                     } catch (e) {
-                      setLocalErr(e instanceof Error ? e.message : String(e))
+                      setLocalErr(String((e as Error)?.message || e)); showToast(String((e as Error)?.message || e), "err")
                     } finally {
                       setBusy(false)
                     }
@@ -690,7 +734,8 @@ function StatusTab(props: { projects: Project[] }): ReactNode {
 interface CatalogGroup { id: string; name: string; models: { id: string; name: string }[] }
 interface WorkspaceItem { id: string; path: string; sessions: number }
 
-function SettingsTab(_props: {}): ReactNode {
+function SettingsTab(props: { showToast: (t: string, k?: 'err' | 'ok') => void }): ReactNode {
+  const { showToast } = props
   const [groups, setGroups] = useState<CatalogGroup[]>([])
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([])
   const [model, setModel] = useState('')
@@ -717,15 +762,20 @@ function SettingsTab(_props: {}): ReactNode {
   const save = async () => {
     setBusy(true); setErr(''); setSaved(false)
     try {
-      await fetch(API + '/settings', {
+      const r = await fetch(API + '/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ingestModel: model, ingestWorkspaceId: workspaceId }),
       })
+      const j = await r.json().catch(() => ({ ok: false, error: '响应解析失败' }))
+      if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`)
       setSaved(true)
+      showToast('设置已保存（持久化，重启后仍生效）', 'ok')
       setTimeout(() => setSaved(false), 2500)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
+      const msg = e instanceof Error ? e.message : String(e)
+      setErr(msg)
+      showToast('保存设置失败：' + msg, 'err')
     } finally {
       setBusy(false)
     }

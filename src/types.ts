@@ -49,6 +49,14 @@ export interface WikiProject {
   error?: string
 }
 
+/** Settings-page persisted values (2026-10-11): survive restarts. */
+export interface PluginSettings {
+  ingestWorkspaceId?: string
+  ingestModel?: string
+  ingestAgentPreset?: string
+  ingestPermissionPreset?: string
+}
+
 export type WikiProjectStatus =
   | 'empty' // created, no uploads yet
   | 'uploaded' // raw docs present, not yet designed

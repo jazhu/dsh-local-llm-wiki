@@ -124,21 +124,65 @@ function statusBadgeClass(s) {
   if (s === "designing" || s === "ingesting" || s === "harvesting") return "dsw-badge dsw-warn";
   return "dsw-badge";
 }
+var TOAST_MS = 5e3;
+function useToast() {
+  const [toast, setToast] = (0, import_react.useState)(null);
+  const showToast = (0, import_react.useCallback)((text, kind = "err") => {
+    setToast({ text, kind });
+  }, []);
+  (0, import_react.useEffect)(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), TOAST_MS);
+    return () => clearTimeout(t);
+  }, [toast]);
+  return { toast, showToast, clearToast: () => setToast(null) };
+}
+function ToastView(props) {
+  const { toast, onClose } = props;
+  if (!toast) return null;
+  return (0, import_react.createElement)(
+    "div",
+    {
+      style: {
+        position: "fixed",
+        top: 12,
+        right: 12,
+        zIndex: 99999,
+        maxWidth: 360,
+        padding: "8px 12px",
+        borderRadius: 8,
+        fontSize: 12,
+        lineHeight: 1.5,
+        boxShadow: "0 4px 14px rgba(0,0,0,0.18)",
+        background: toast.kind === "err" ? "#fef2f2" : "#f0fdf4",
+        color: toast.kind === "err" ? "#b91c1c" : "#15803d",
+        border: toast.kind === "err" ? "1px solid #fca5a5" : "1px solid #86efac",
+        cursor: "pointer"
+      },
+      onClick: onClose,
+      title: "\u70B9\u51FB\u5173\u95ED"
+    },
+    toast.text
+  );
+}
 var POLL_MS = 2e3;
 function Panel() {
   const [tab, setTab] = (0, import_react.useState)("projects");
   const [projects, setProjects] = (0, import_react.useState)([]);
   const [err, setErr] = (0, import_react.useState)("");
   const [creating, setCreating] = (0, import_react.useState)(false);
+  const { toast, showToast, clearToast } = useToast();
   const refresh = (0, import_react.useCallback)(async () => {
     try {
       const data = await apiGet("/projects");
       setProjects(data.projects);
       setErr("");
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg);
+      showToast("API \u9519\u8BEF\uFF1A" + msg, "err");
     }
-  }, []);
+  }, [showToast]);
   (0, import_react.useEffect)(() => {
     refresh();
   }, [refresh]);
@@ -161,14 +205,15 @@ function Panel() {
       (0, import_react.createElement)("div", { className: "dsw-tab" + (tab === "settings" ? " dsw-active" : ""), onClick: () => setTab("settings") }, "\u8BBE\u7F6E")
     ),
     err ? (0, import_react.createElement)("div", { className: "dsw-err" }, "API \u9519\u8BEF\uFF1A", err) : null,
-    tab === "projects" && (0, import_react.createElement)(ProjectsTab, { projects, refresh, creating, setCreating }),
+    tab === "projects" && (0, import_react.createElement)(ProjectsTab, { projects, refresh, creating, setCreating, showToast }),
     tab === "search" && (0, import_react.createElement)(SearchTab, {}),
     tab === "status" && (0, import_react.createElement)(StatusTab, { projects }),
-    tab === "settings" && (0, import_react.createElement)(SettingsTab, {})
+    tab === "settings" && (0, import_react.createElement)(SettingsTab, { showToast }),
+    (0, import_react.createElement)(ToastView, { toast, onClose: clearToast })
   );
 }
 function ProjectsTab(props) {
-  const { projects, refresh, creating, setCreating } = props;
+  const { projects, refresh, creating, setCreating, showToast } = props;
   const [newName, setNewName] = (0, import_react.useState)("");
   const [newDomain, setNewDomain] = (0, import_react.useState)("");
   const create = async () => {
@@ -198,24 +243,17 @@ function ProjectsTab(props) {
         (0, import_react.createElement)("button", { className: "dsw-btn", disabled: creating, onClick: create }, "\u521B\u5EFA")
       )
     ),
-    projects.length === 0 ? (0, import_react.createElement)("div", { className: "dsw-muted" }, "\u8FD8\u6CA1\u6709\u77E5\u8BC6\u5E93\uFF0C\u5148\u521B\u5EFA\u4E00\u4E2A\u518D\u4E0A\u4F20\u6587\u6863\u3002") : (0, import_react.createElement)("div", { className: "dsw-list" }, projects.map((p) => (0, import_react.createElement)(ProjectCard, { key: p.id, project: p, refresh })))
+    projects.length === 0 ? (0, import_react.createElement)("div", { className: "dsw-muted" }, "\u8FD8\u6CA1\u6709\u77E5\u8BC6\u5E93\uFF0C\u5148\u521B\u5EFA\u4E00\u4E2A\u518D\u4E0A\u4F20\u6587\u6863\u3002") : (0, import_react.createElement)("div", { className: "dsw-list" }, projects.map((p) => (0, import_react.createElement)(ProjectCard, { key: p.id, project: p, refresh, showToast })))
   );
 }
 function ProjectCard(props) {
-  const { project: p, refresh } = props;
+  const { project: p, refresh, showToast } = props;
   const [drag, setDrag] = (0, import_react.useState)(false);
   const [localErr, setLocalErr] = (0, import_react.useState)("");
   const [busy, setBusy] = (0, import_react.useState)(false);
-  const [dismissedErr, setDismissedErr] = (0, import_react.useState)(null);
   (0, import_react.useEffect)(() => {
-    if (!p.error) {
-      setDismissedErr(null);
-      return;
-    }
-    if (dismissedErr === null) return;
-    const t = setTimeout(() => setDismissedErr(null), 6e4);
-    return () => clearTimeout(t);
-  }, [p.error]);
+    if (p.error) showToast("\u9519\u8BEF\uFF1A" + p.error, "err");
+  }, [p.error, showToast]);
   const [schemaDraft, setSchemaDraft] = (0, import_react.useState)("");
   const [uploads, setUploads] = (0, import_react.useState)([]);
   const [pages, setPages] = (0, import_react.useState)([]);
@@ -245,7 +283,8 @@ function ProjectCard(props) {
       await refresh();
       await loadDetail();
     } catch (e) {
-      setLocalErr(e instanceof Error ? e.message : String(e));
+      setLocalErr(String(e?.message || e));
+      showToast(String(e?.message || e), "err");
     } finally {
       setBusy(false);
     }
@@ -257,7 +296,8 @@ function ProjectCard(props) {
       await apiPostJson(`/design/${p.id}`, {});
       await refresh();
     } catch (e) {
-      setLocalErr(e instanceof Error ? e.message : String(e));
+      setLocalErr(String(e?.message || e));
+      showToast(String(e?.message || e), "err");
     } finally {
       setBusy(false);
     }
@@ -269,7 +309,8 @@ function ProjectCard(props) {
       await apiPostJson(`/schema/${p.id}`, { schema: schemaDraft });
       await refresh();
     } catch (e) {
-      setLocalErr(e instanceof Error ? e.message : String(e));
+      setLocalErr(String(e?.message || e));
+      showToast(String(e?.message || e), "err");
     } finally {
       setBusy(false);
     }
@@ -281,7 +322,8 @@ function ProjectCard(props) {
       await apiPostJson(`/ingest/${p.id}`, {});
       await refresh();
     } catch (e) {
-      setLocalErr(e instanceof Error ? e.message : String(e));
+      setLocalErr(String(e?.message || e));
+      showToast(String(e?.message || e), "err");
     } finally {
       setBusy(false);
     }
@@ -307,7 +349,8 @@ function ProjectCard(props) {
       await apiPostJson(`/build/${p.id}`, {});
       await refresh();
     } catch (e) {
-      setLocalErr(e instanceof Error ? e.message : String(e));
+      setLocalErr(String(e?.message || e));
+      showToast(String(e?.message || e), "err");
     } finally {
       setBusy(false);
     }
@@ -321,7 +364,8 @@ function ProjectCard(props) {
       await apiPostJson(`/lintfix/${p.id}`, {});
       await refresh();
     } catch (e) {
-      setLocalErr(e instanceof Error ? e.message : String(e));
+      setLocalErr(String(e?.message || e));
+      showToast(String(e?.message || e), "err");
     } finally {
       setBusy(false);
     }
@@ -339,12 +383,6 @@ function ProjectCard(props) {
       (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", style: { marginLeft: "auto" }, disabled: busy, onClick: del }, "\u5220\u9664")
     ),
     p.domain ? (0, import_react.createElement)("div", { className: "dsw-muted" }, p.domain) : null,
-    p.error && dismissedErr !== p.error ? (0, import_react.createElement)(
-      "div",
-      { className: "dsw-err", style: { display: "flex", alignItems: "center", gap: 8 } },
-      (0, import_react.createElement)("span", { style: { flex: 1 } }, "\u9519\u8BEF\uFF1A", p.error),
-      (0, import_react.createElement)("button", { className: "dsw-btn dsw-ghost", style: { padding: "0 8px" }, onClick: () => p.error && setDismissedErr(p.error), title: "\u5173\u95ED\uFF0860 \u79D2\u540E\u81EA\u52A8\u6062\u590D\u663E\u793A\u80FD\u529B\uFF0C\u65B0\u9519\u8BEF\u4ECD\u4F1A\u51FA\u73B0\uFF09" }, "\u2715")
-    ) : null,
     // Upload zone
     (0, import_react.createElement)(
       "div",
@@ -442,7 +480,8 @@ function ProjectCard(props) {
                   if (!r.ok) throw new Error(r.error || "\u5220\u9664\u5931\u8D25");
                   await loadDetail();
                 } catch (e) {
-                  setLocalErr(e instanceof Error ? e.message : String(e));
+                  setLocalErr(String(e?.message || e));
+                  showToast(String(e?.message || e), "err");
                 } finally {
                   setBusy(false);
                 }
@@ -628,7 +667,8 @@ function StatusTab(props) {
     ))
   );
 }
-function SettingsTab(_props) {
+function SettingsTab(props) {
+  const { showToast } = props;
   const [groups, setGroups] = (0, import_react.useState)([]);
   const [workspaces, setWorkspaces] = (0, import_react.useState)([]);
   const [model, setModel] = (0, import_react.useState)("");
@@ -655,15 +695,20 @@ function SettingsTab(_props) {
     setErr("");
     setSaved(false);
     try {
-      await fetch(API + "/settings", {
+      const r = await fetch(API + "/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ingestModel: model, ingestWorkspaceId: workspaceId })
       });
+      const j = await r.json().catch(() => ({ ok: false, error: "\u54CD\u5E94\u89E3\u6790\u5931\u8D25" }));
+      if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
       setSaved(true);
+      showToast("\u8BBE\u7F6E\u5DF2\u4FDD\u5B58\uFF08\u6301\u4E45\u5316\uFF0C\u91CD\u542F\u540E\u4ECD\u751F\u6548\uFF09", "ok");
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg);
+      showToast("\u4FDD\u5B58\u8BBE\u7F6E\u5931\u8D25\uFF1A" + msg, "err");
     } finally {
       setBusy(false);
     }

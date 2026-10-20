@@ -780,6 +780,7 @@ function SettingsTab(props) {
   const [workspaceId, setWorkspaceId] = (0, import_react.useState)("");
   const [agentPreset, setAgentPreset] = (0, import_react.useState)("");
   const [permPreset, setPermPreset] = (0, import_react.useState)("");
+  const [skillInjection, setSkillInjection] = (0, import_react.useState)("auto");
   const [err, setErr] = (0, import_react.useState)("");
   const [saved, setSaved] = (0, import_react.useState)(false);
   const [busy, setBusy] = (0, import_react.useState)(false);
@@ -792,6 +793,7 @@ function SettingsTab(props) {
       setWorkspaceId(d.settings.ingestWorkspaceId || "");
       setAgentPreset(d.settings.ingestAgentPreset || "");
       setPermPreset(d.settings.ingestPermissionPreset || "");
+      if (d.settings.skillInjection) setSkillInjection(d.settings.skillInjection);
     }).catch(() => {
     });
   }, []);
@@ -803,7 +805,7 @@ function SettingsTab(props) {
       const r = await fetch(API + "/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ingestModel: model, ingestWorkspaceId: workspaceId })
+        body: JSON.stringify({ ingestModel: model, ingestWorkspaceId: workspaceId, skillInjection })
       });
       const j = await r.json().catch(() => ({ ok: false, error: "\u54CD\u5E94\u89E3\u6790\u5931\u8D25" }));
       if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
@@ -849,6 +851,23 @@ function SettingsTab(props) {
             (g) => g.models.map((m) => (0, import_react.createElement)("option", { key: `${g.id}/${m.id}`, value: `${g.id}/${m.id}` }, `${g.name} \xB7 ${m.name}`))
           ).flat()
         )
+      ),
+      (0, import_react.createElement)(
+        "div",
+        { className: "dsw-row", style: { marginTop: 8 } },
+        (0, import_react.createElement)("span", { className: "dsw-muted" }, "\u6280\u80FD\u6CE8\u5165\u65B9\u5F0F\uFF1A"),
+        (0, import_react.createElement)(
+          "select",
+          { className: "dsw-input", style: { maxWidth: 340 }, value: skillInjection, onChange: (e) => setSkillInjection(e.target.value) },
+          (0, import_react.createElement)("option", { value: "inline" }, "inline\uFF08\u5B8C\u6574\u5185\u8054 75KB \u6280\u80FD\u5168\u6587\uFF09"),
+          (0, import_react.createElement)("option", { value: "tool" }, "tool\uFF08\u8C03\u7528 skill \u5DE5\u5177\uFF0C\u63D0\u793A\u8BCD\u6700\u7CBE\u7B80\uFF09"),
+          (0, import_react.createElement)("option", { value: "auto" }, "auto\uFF08\u8C03\u7528 skill \u5DE5\u5177 + \u6838\u5FC3\u8981\u70B9\u515C\u5E95\uFF09")
+        )
+      ),
+      (0, import_react.createElement)(
+        "div",
+        { className: "dsw-muted", style: { marginTop: 4 } },
+        skillInjection === "inline" ? "\u6BCF\u6B21\u6784\u5EFA\u4F1A\u8BDD\u90FD\u628A 75KB \u6280\u80FD\u5168\u6587\u6CE8\u5165\u63D0\u793A\u8BCD\uFF0C\u6700\u7A33\u5065\u4F46\u4F53\u79EF\u5927\u3002" : skillInjection === "tool" ? '\u63D0\u793A\u8BCD\u53EA\u8981\u6C42\u4F1A\u8BDD\u8C03\u7528 skill("llm-wiki") \u52A0\u8F7D\u6280\u80FD\uFF0C\u6700\u7CBE\u7B80\uFF1B\u82E5\u6A21\u578B\u4E0D\u8C03\u7528\u5219\u53EA\u5269\u4EFB\u52A1\u91CC\u7684\u786C\u6570\u5B57\u3002' : "\u63D0\u793A\u8BCD\u8981\u6C42\u8C03\u7528 skill \u5DE5\u5177\uFF0C\u540C\u65F6\u5185\u8054\u7EA6 1.5KB \u6838\u5FC3\u534F\u8BAE\u8981\u70B9\uFF1B\u6A21\u578B\u4E0D\u8C03\u7528\u4E5F\u6709\u5E95\u7EBF\u3002"
       ),
       (0, import_react.createElement)(
         "div",

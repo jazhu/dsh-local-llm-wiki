@@ -851,6 +851,7 @@ function SettingsTab(props: { showToast: (t: string, k?: 'err' | 'ok') => void }
   const [workspaceId, setWorkspaceId] = useState('')
   const [agentPreset, setAgentPreset] = useState('')
   const [permPreset, setPermPreset] = useState('')
+  const [skillInjection, setSkillInjection] = useState<'inline' | 'tool' | 'auto'>('auto')
   const [err, setErr] = useState('')
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -858,12 +859,13 @@ function SettingsTab(props: { showToast: (t: string, k?: 'err' | 'ok') => void }
   useEffect(() => {
     apiGet<{ groups: CatalogGroup[] }>('/catalog').then((d) => setGroups(d.groups ?? [])).catch((e) => setErr(String(e)))
     apiGet<{ workspaces: WorkspaceItem[] }>('/workspaces').then((d) => setWorkspaces(d.workspaces ?? [])).catch(() => {})
-    apiGet<{ settings: { ingestWorkspaceId: string; ingestModel: string; ingestAgentPreset: string; ingestPermissionPreset: string } }>('/settings')
+    apiGet<{ settings: { ingestWorkspaceId: string; ingestModel: string; ingestAgentPreset: string; ingestPermissionPreset: string; skillInjection: 'inline' | 'tool' | 'auto' } }>('/settings')
       .then((d) => {
         setModel(d.settings.ingestModel || '')
         setWorkspaceId(d.settings.ingestWorkspaceId || '')
         setAgentPreset(d.settings.ingestAgentPreset || '')
         setPermPreset(d.settings.ingestPermissionPreset || '')
+        if (d.settings.skillInjection) setSkillInjection(d.settings.skillInjection)
       })
       .catch(() => {})
   }, [])
@@ -874,7 +876,7 @@ function SettingsTab(props: { showToast: (t: string, k?: 'err' | 'ok') => void }
       const r = await fetch(API + '/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ingestModel: model, ingestWorkspaceId: workspaceId }),
+        body: JSON.stringify({ ingestModel: model, ingestWorkspaceId: workspaceId, skillInjection }),
       })
       const j = await r.json().catch(() => ({ ok: false, error: '响应解析失败' }))
       if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`)
@@ -917,6 +919,23 @@ function SettingsTab(props: { showToast: (t: string, k?: 'err' | 'ok') => void }
             g.models.map((m) => h('option', { key: `${g.id}/${m.id}`, value: `${g.id}/${m.id}` }, `${g.name} · ${m.name}`)),
           ).flat(),
         ),
+      ),
+      h('div', { className: 'dsw-row', style: { marginTop: 8 } },
+        h('span', { className: 'dsw-muted' }, '技能注入方式：'),
+        h(
+          'select',
+          { className: 'dsw-input', style: { maxWidth: 340 }, value: skillInjection, onChange: (e: any) => setSkillInjection(e.target.value) },
+          h('option', { value: 'inline' }, 'inline（完整内联 75KB 技能全文）'),
+          h('option', { value: 'tool' }, 'tool（调用 skill 工具，提示词最精简）'),
+          h('option', { value: 'auto' }, 'auto（调用 skill 工具 + 核心要点兜底）'),
+        ),
+      ),
+      h('div', { className: 'dsw-muted', style: { marginTop: 4 } },
+        skillInjection === 'inline'
+          ? '每次构建会话都把 75KB 技能全文注入提示词，最稳健但体积大。'
+          : skillInjection === 'tool'
+            ? '提示词只要求会话调用 skill("llm-wiki") 加载技能，最精简；若模型不调用则只剩任务里的硬数字。'
+            : '提示词要求调用 skill 工具，同时内联约 1.5KB 核心协议要点；模型不调用也有底线。',
       ),
       h('div', { className: 'dsw-row', style: { marginTop: 10 } },
         h('button', { className: 'dsw-btn', disabled: busy, onClick: save }, '保存设置'),

@@ -30,6 +30,7 @@ import {
   type SessionControllerLike,
 } from './session-ingest.ts'
 import { lintPages } from './lint.ts'
+import type { SkillInjection } from './types.ts'
 
 export const name = 'dsh-local-llm-wiki'
 
@@ -44,6 +45,12 @@ export interface Config {
   ingestWorkspaceId: string
   /** Model pool selection applied to new build sessions ("provider/model"). Empty = host default model. */
   ingestModel: string
+  /**
+   * How the bundled llm-wiki skill reaches a build session (2026-10-20):
+   * inline = prepend the full skill text; tool = name the host skill tool;
+   * auto = tool + a compact protocol digest as fallback.
+   */
+  skillInjection: SkillInjection
   apiPort: number
 }
 
@@ -53,8 +60,11 @@ export const DEFAULT_CONFIG: Config = {
   ingestPermissionPreset: 'auto',
   ingestWorkspaceId: '',
   ingestModel: '',
+  skillInjection: 'auto',
   apiPort: 18781,
 }
+
+const SKILL_INJECTIONS: readonly SkillInjection[] = ['inline', 'tool', 'auto']
 
 export function resolveConfig(config?: Partial<Config>, profileDataDir?: string): Config {
   const apiPort = Number(config?.apiPort ?? DEFAULT_CONFIG.apiPort)
@@ -76,6 +86,7 @@ export function resolveConfig(config?: Partial<Config>, profileDataDir?: string)
     ingestPermissionPreset,
     ingestWorkspaceId,
     ingestModel,
+    skillInjection: SKILL_INJECTIONS.includes(config?.skillInjection as SkillInjection) ? (config!.skillInjection as SkillInjection) : DEFAULT_CONFIG.skillInjection,
     apiPort: Number.isFinite(apiPort) && apiPort > 0 ? apiPort : DEFAULT_CONFIG.apiPort,
   }
 }
@@ -356,14 +367,16 @@ function activate(ctx: ContextLike, config?: Partial<Config>): void {
     // later submit picks them up without restarting DSH (persistence in the
     // profile config file is a host-owned concern; the runtime copy is the
     // source of truth within this process).
-    saveSettings: (patch: { ingestWorkspaceId?: string; ingestModel?: string }) => {
+    saveSettings: (patch: { ingestWorkspaceId?: string; ingestModel?: string; skillInjection?: SkillInjection }) => {
       if (patch.ingestWorkspaceId !== undefined) resolved.ingestWorkspaceId = patch.ingestWorkspaceId.trim()
       if (patch.ingestModel !== undefined) resolved.ingestModel = patch.ingestModel.trim()
+      if (patch.skillInjection !== undefined) resolved.skillInjection = patch.skillInjection
       // Persist immediately (2026-10-11): fire-and-forget — the runtime copy is
       // updated synchronously, the disk copy lands in <dataDir>/settings.json.
       void store.saveSettings({
         ingestWorkspaceId: patch.ingestWorkspaceId?.trim(),
         ingestModel: patch.ingestModel?.trim(),
+        skillInjection: patch.skillInjection,
       })
       return resolved
     },
@@ -387,7 +400,8 @@ function activate(ctx: ContextLike, config?: Partial<Config>): void {
         workspaceId: resolved.ingestWorkspaceId || undefined,
         modelSelection: parseModelSelection(resolved.ingestModel),
         permissionPreset: resolved.ingestPermissionPreset,
-        skillText: builtinSkill,
+        skillText: resolved.skillInjection === 'inline' ? builtinSkill : '',
+        skillInjection: resolved.skillInjection,
         signal: new AbortController().signal,
         rawDocs,
       })
@@ -412,7 +426,8 @@ function activate(ctx: ContextLike, config?: Partial<Config>): void {
         workspaceId: resolved.ingestWorkspaceId || undefined,
         modelSelection: parseModelSelection(resolved.ingestModel),
         permissionPreset: resolved.ingestPermissionPreset,
-        skillText: builtinSkill,
+        skillText: resolved.skillInjection === 'inline' ? builtinSkill : '',
+        skillInjection: resolved.skillInjection,
         signal: new AbortController().signal,
         rawDocs,
         doneTool: 'wiki_done',
@@ -438,7 +453,8 @@ function activate(ctx: ContextLike, config?: Partial<Config>): void {
         workspaceId: resolved.ingestWorkspaceId || undefined,
         modelSelection: parseModelSelection(resolved.ingestModel),
         permissionPreset: resolved.ingestPermissionPreset,
-        skillText: builtinSkill,
+        skillText: resolved.skillInjection === 'inline' ? builtinSkill : '',
+        skillInjection: resolved.skillInjection,
         signal: new AbortController().signal,
         rawDocs,
         doneTool: 'wiki_done',
@@ -468,7 +484,8 @@ function activate(ctx: ContextLike, config?: Partial<Config>): void {
         workspaceId: resolved.ingestWorkspaceId || undefined,
         modelSelection: parseModelSelection(resolved.ingestModel),
         permissionPreset: resolved.ingestPermissionPreset,
-        skillText: builtinSkill,
+        skillText: resolved.skillInjection === 'inline' ? builtinSkill : '',
+        skillInjection: resolved.skillInjection,
         signal: new AbortController().signal,
         rawDocs,
         doneTool: 'wiki_done',
@@ -663,7 +680,7 @@ interface Deps {
   submitBuild: (id: string) => Promise<string>
   submitLintFix: (id: string) => Promise<string>
   advanceDesign: (id: string) => Promise<ReturnType<ProjectStore['get']>>
-  saveSettings: (patch: { ingestWorkspaceId?: string; ingestModel?: string }) => Config
+  saveSettings: (patch: { ingestWorkspaceId?: string; ingestModel?: string; skillInjection?: SkillInjection }) => Config
   logInfo: (m: string) => void
   logWarn: (m: string) => void
   logErr: (m: string) => void
@@ -918,15 +935,17 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, deps:
         ingestModel: deps.resolved.ingestModel,
         ingestAgentPreset: deps.resolved.ingestAgentPreset,
         ingestPermissionPreset: deps.resolved.ingestPermissionPreset,
+        skillInjection: deps.resolved.skillInjection,
       },
     })
     return
   }
 
-  // PUT /settings  { ingestWorkspaceId?, ingestModel? } — persist the
-  // settings-page choices into the plugin config (module-level runtime copy).
+  // PUT /settings  { ingestWorkspaceId?, ingestModel?, skillInjection? } —
+  // persist the settings-page choices into the plugin config (runtime copy
+  // + SQLite settings table).
   if (method === 'PUT' && rest === '/settings') {
-    let body: { ingestWorkspaceId?: string; ingestModel?: string }
+    let body: { ingestWorkspaceId?: string; ingestModel?: string; skillInjection?: string }
     try {
       body = JSON.parse((await readBody(req)).toString('utf-8') || '{}')
     } catch {
@@ -936,6 +955,7 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, deps:
     const next = deps.saveSettings({
       ingestWorkspaceId: typeof body.ingestWorkspaceId === 'string' ? body.ingestWorkspaceId : undefined,
       ingestModel: typeof body.ingestModel === 'string' ? body.ingestModel : undefined,
+      skillInjection: SKILL_INJECTIONS.includes(body.skillInjection as SkillInjection) ? (body.skillInjection as SkillInjection) : undefined,
     })
     writeJson(res, 200, {
       ok: true,
@@ -944,6 +964,7 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, deps:
         ingestModel: next.ingestModel,
         ingestAgentPreset: next.ingestAgentPreset,
         ingestPermissionPreset: next.ingestPermissionPreset,
+        skillInjection: next.skillInjection,
       },
     })
     return

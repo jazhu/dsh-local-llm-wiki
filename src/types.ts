@@ -49,12 +49,23 @@ export interface WikiProject {
   error?: string
 }
 
+/**
+ * How the llm-wiki skill reaches a build session (user-requested 2026-10-20).
+ * - `inline`: prepend the full ~75 KB skill text to the prompt (v0.4.4 default).
+ * - `tool`:   name the host `skill` tool and require the session to load
+ *             llm-wiki through it; the prompt carries only the task.
+ * - `auto`:   same as `tool`, plus a compact core-protocol digest so the session
+ *             still follows the hard numbers when the skill call fails.
+ */
+export type SkillInjection = 'inline' | 'tool' | 'auto'
+
 /** Settings-page persisted values (2026-10-11): survive restarts. */
 export interface PluginSettings {
   ingestWorkspaceId?: string
   ingestModel?: string
   ingestAgentPreset?: string
   ingestPermissionPreset?: string
+  skillInjection?: SkillInjection
 }
 
 export type WikiProjectStatus =

@@ -15,9 +15,9 @@
 import { promises as fs } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
-import type { PluginSettings, RawDoc, WikiLintReport, WikiPage, WikiProject } from './types.ts'
 import { parseWikiPage } from './wiki-parse.ts'
 import { WikiDb, migrateLegacyJson, type SqliteLogger } from './store-db.ts'
+import type { PluginSettings, RawDoc, SkillInjection, WikiLintReport, WikiPage, WikiProject } from './types.ts'
 
 const REGISTRY_FILE = 'registry.json'
 const MANIFEST_FILE = 'manifest.json'
@@ -518,12 +518,13 @@ export class ProjectStore {
   // <dataDir>/settings.json and overlay on top of the resolved config.
 
   /** Overlay persisted settings onto a resolved config (mutates and returns it). */
-  async loadSettingsInto<T extends { ingestWorkspaceId: string; ingestModel: string; ingestAgentPreset: string; ingestPermissionPreset: string }>(resolved: T): Promise<T> {
+  async loadSettingsInto<T extends { ingestWorkspaceId: string; ingestModel: string; ingestAgentPreset: string; ingestPermissionPreset: string; skillInjection: SkillInjection }>(resolved: T): Promise<T> {
     const saved = await this.readSettings()
     if (saved.ingestWorkspaceId !== undefined) resolved.ingestWorkspaceId = saved.ingestWorkspaceId
     if (saved.ingestModel !== undefined) resolved.ingestModel = saved.ingestModel
     if (saved.ingestAgentPreset !== undefined) resolved.ingestAgentPreset = saved.ingestAgentPreset
     if (saved.ingestPermissionPreset !== undefined) resolved.ingestPermissionPreset = saved.ingestPermissionPreset
+    if (saved.skillInjection !== undefined) resolved.skillInjection = saved.skillInjection
     return resolved
   }
 

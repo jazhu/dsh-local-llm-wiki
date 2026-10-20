@@ -7,9 +7,9 @@
 // Run: node probe-prompt.mjs
 import { render, cleanup } from './_probe-import.mjs'
 
-const checks = {
+// Shared checks: must hold in every mode.
+const shared = {
   design: [
-    ['schema-guide reference', 'BUNDLED: references/schema-guide.md'],
     ['schema target path', ['SCHEMA.md']],
     ['no-build constraint', '不构建页面'],
     ['no done tool', '不调用任何"构建完成"类工具'],
@@ -51,6 +51,13 @@ const checks = {
     ['cleanliness', '清洁度'],
     ['done tool', 'wiki_done'],
   ],
+}
+
+// Mode-specific checks.
+const inlineOnly = {
+  design: [
+    ['schema-guide reference', 'BUNDLED: references/schema-guide.md'],
+  ],
   withSkill: [
     ['attachment pointer', '<llm-wiki-skill-attachment>'],
     ['BUNDLED marker hint', 'BUNDLED: <path>'],
@@ -58,15 +65,46 @@ const checks = {
     ['skill body present', '<skill-body>'],
   ],
 }
+// tool / auto: must reference the host skill tool and the core digest.
+const toolMode = {
+  design: [
+    ['skill tool call', 'skill'],
+    ['skill name', 'llm-wiki'],
+    ['core digest', '核心协议要点'],
+  ],
+  withSkill: [
+    ['skill tool call', 'skill'],
+    ['skill name', 'llm-wiki'],
+    ['core digest', '核心协议要点'],
+    ['step 0', '步骤 0'],
+  ],
+}
 
 const results = []
-for (const [kind, list] of Object.entries(checks)) {
-  const text = await render(kind)
+const runChecks = async (kind, list, mode, text) => {
   for (const [label, needle] of list) {
     const variants = Array.isArray(needle) ? needle : [needle]
     const hit = variants.some((n) => text.includes(n))
-    results.push({ kind, label, needle, hit })
-    console.log(`${hit ? 'PASS' : 'FAIL'}  [${kind}] ${label}${hit ? '' : ` — missing: ${needle}`}`)
+    results.push({ kind, label, needle, hit, mode })
+    console.log(`${hit ? 'PASS' : 'FAIL'}  [${kind}/${mode}] ${label}${hit ? '' : ` — missing: ${needle}`}`)
+  }
+}
+for (const [kind, list] of Object.entries(shared)) {
+  for (const mode of ['inline', 'tool', 'auto']) {
+    const text = await render(kind, mode)
+    await runChecks(kind, list, mode, text)
+  }
+}
+for (const mode of ['inline']) {
+  for (const [kind, list] of Object.entries(inlineOnly)) {
+    const text = await render(kind, mode)
+    await runChecks(kind, list, mode, text)
+  }
+}
+for (const mode of ['tool', 'auto']) {
+  for (const [kind, list] of Object.entries(toolMode)) {
+    const text = await render(kind, mode)
+    await runChecks(kind, list, mode, text)
   }
 }
 const failed = results.filter((r) => !r.hit)

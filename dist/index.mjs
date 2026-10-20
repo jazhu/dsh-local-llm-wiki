@@ -722,6 +722,7 @@ var ProjectStore = class {
     if (saved.ingestModel !== void 0) resolved.ingestModel = saved.ingestModel;
     if (saved.ingestAgentPreset !== void 0) resolved.ingestAgentPreset = saved.ingestAgentPreset;
     if (saved.ingestPermissionPreset !== void 0) resolved.ingestPermissionPreset = saved.ingestPermissionPreset;
+    if (saved.skillInjection !== void 0) resolved.skillInjection = saved.skillInjection;
     return resolved;
   }
   async readSettings() {
@@ -1252,27 +1253,45 @@ async function stageSourceIndex(rawDir, docs) {
   }
   return lines.join("\n");
 }
-function withSkill(skillText, task) {
-  if (!skillText || !skillText.trim()) return task;
-  return [
-    `<llm-wiki-skill>`,
-    skillText.trim(),
-    `</llm-wiki-skill>`,
+var SKILL_CORE_DIGEST = `\u6838\u5FC3\u534F\u8BAE\u8981\u70B9\uFF08\u672A\u80FD\u52A0\u8F7D\u6280\u80FD\u5168\u6587\u65F6\u6309\u6B64\u6267\u884C\uFF09\uFF1A
+- \u76EE\u5F55\u7ED3\u6784\uFF1Araw/\uFF08\u4E0D\u53EF\u53D8\uFF09+ <wiki>/\uFF08SCHEMA.md / index.md / log.md / entities / concepts / comparisons / queries\uFF09\uFF1B\u9879\u76EE\u6839\u76EE\u5F55\u53EA\u5141\u8BB8 raw/ \u4E0E <wiki>/\u3002
+- ingest \u56DB\u9636\u6BB5\uFF1APhase1 \u89C4\u5212\uFF08SCHEMA.md \u9875\u9762\u6E05\u5355 + manifest.json SHA256 \u589E\u91CF\uFF09\u2192 Phase2 \u5206\u6279\u5E76\u884C\u63D0\u53D6\uFF08MAX_CONCURRENT_AGENTS=5\uFF0C\u5B50 Agent \u53EA\u8F93\u51FA JSON\uFF0C\u5FC5\u987B\u5199 <wiki>/.ingest-cache/<slug>.json\uFF0C\u8D85\u65F6 300s\u3001\u5931\u8D25\u91CD\u8BD5 1 \u6B21\uFF09\u2192 Phase3 \u6309\u9875\u9762\u6A21\u677F\u7EC4\u88C5 Markdown\uFF08frontmatter\uFF1Atitle/tags/sources/updated/confidence/aliases/related\uFF09\u2192 Phase4 \u8986\u76D6\u7387\u9A8C\u8BC1 + \u66F4\u65B0 manifest + \u9012\u5F52\u6E05\u7406\u3002
+- SCHEMA.md \u81F3\u5C11\u8986\u76D6\uFF1A\u9886\u57DF\u5B9A\u4E49\u3001\u76EE\u5F55\u7EA6\u5B9A\u3001frontmatter \u5FC5\u586B\u5B57\u6BB5\u3001\u6807\u7B7E\u4F53\u7CFB\u3001\u9875\u9762\u6A21\u677F\u9009\u62E9\u3001\u4EA4\u53C9\u5F15\u7528\u89C4\u5219\u3001index.md / log.md \u89C4\u8303\u3002
+- \u4E0D\u4ECE\u8BB0\u5FC6\u56DE\u7B54\u9886\u57DF\u5185\u5BB9\uFF0C\u4E00\u5207\u4FE1\u606F\u6765\u81EA\u6E90\u6587\u6863\uFF1B\u9875\u9762\u6B63\u6587\u4E0E\u6E90\u6587\u6863\u8BED\u8A00\u4E00\u81F4\uFF0Cslug \u7528\u82F1\u6587\u77ED\u6A2A\u7EBF\u547D\u540D\u3002`;
+function withSkill(skillText, task, mode = "inline") {
+  if (mode === "inline") {
+    if (!skillText || !skillText.trim()) return task;
+    return [
+      `<llm-wiki-skill>`,
+      skillText.trim(),
+      `</llm-wiki-skill>`,
+      ``,
+      `> \u9605\u8BFB\u6307\u5F15\uFF1A\u4E0A\u9762\u662F llm-wiki \u6280\u80FD\u5168\u6587\uFF08\u542B\u6807\u51C6\u76EE\u5F55\u7ED3\u6784\u30017 \u5927\u65B9\u6CD5\u3001\u6838\u5FC3\u7EA6\u675F\u4E0E\u6309\u9700\u52A0\u8F7D\u89C4\u5219\uFF09\u3002`,
+      `> \u6280\u80FD\u6B63\u6587\u4E2D\u8981\u6C42\u300C\u8BFB\u53D6 references/<file>.md\u300D\u6216\u300C\u8BFB\u53D6 scripts/<file>\u300D\u65F6\uFF0C\u8BF7\u5728\u4E0A\u65B9\u5168\u6587\u672B\u5C3E\u7684`,
+      `> <llm-wiki-skill-attachment> \u5757\u5185\u6309\u540C\u540D \`BUNDLED: <path>\` \u6807\u8BB0\u5B9A\u4F4D\u5BF9\u5E94\u5185\u5BB9\uFF08schema-guide.md /`,
+      `> templates.md / ingest-workflow.md / lint-rules.md / lint.py / evaluate.py \u5DF2\u5168\u6587\u5185\u8054\uFF0C\u65E0\u9700\u8BBF\u95EE\u78C1\u76D8\uFF09\u3002`,
+      ``,
+      `---`,
+      ``,
+      task
+    ].join("\n");
+  }
+  const step0 = [
+    `## \u6B65\u9AA4 0\uFF1A\u52A0\u8F7D llm-wiki \u6280\u80FD`,
+    `\u672C\u4EFB\u52A1\u4F9D\u8D56 llm-wiki \u6280\u80FD\u3002\u8BF7\u7ACB\u5373\u8C03\u7528\u5DE5\u5177 \`skill\`\uFF0C\u53C2\u6570 \`{"name":"llm-wiki"}\`\uFF0C\u52A0\u8F7D\u5176\u5168\u6587\u5E76\u4E25\u683C\u9075\u5FAA\u3002`,
+    `\u82E5\u8BE5\u5DE5\u5177\u4E0D\u53EF\u7528\u6216\u8C03\u7528\u5931\u8D25\uFF0C\u4E0D\u5F97\u653E\u5F03\u4EFB\u52A1\u2014\u2014\u6309\u4E0B\u8FF0\u6838\u5FC3\u534F\u8BAE\u8981\u70B9\u7EE7\u7EED\u6267\u884C\uFF1A`,
     ``,
-    `> \u9605\u8BFB\u6307\u5F15\uFF1A\u4E0A\u9762\u662F llm-wiki \u6280\u80FD\u5168\u6587\uFF08\u542B\u6807\u51C6\u76EE\u5F55\u7ED3\u6784\u30017 \u5927\u65B9\u6CD5\u3001\u6838\u5FC3\u7EA6\u675F\u4E0E\u6309\u9700\u52A0\u8F7D\u89C4\u5219\uFF09\u3002`,
-    `> \u6280\u80FD\u6B63\u6587\u4E2D\u8981\u6C42\u300C\u8BFB\u53D6 references/<file>.md\u300D\u6216\u300C\u8BFB\u53D6 scripts/<file>\u300D\u65F6\uFF0C\u8BF7\u5728\u4E0A\u65B9\u5168\u6587\u672B\u5C3E\u7684`,
-    `> <llm-wiki-skill-attachment> \u5757\u5185\u6309\u540C\u540D \`BUNDLED: <path>\` \u6807\u8BB0\u5B9A\u4F4D\u5BF9\u5E94\u5185\u5BB9\uFF08schema-guide.md /`,
-    `> templates.md / ingest-workflow.md / lint-rules.md / lint.py / evaluate.py \u5DF2\u5168\u6587\u5185\u8054\uFF0C\u65E0\u9700\u8BBF\u95EE\u78C1\u76D8\uFF09\u3002`,
+    SKILL_CORE_DIGEST,
     ``,
     `---`,
-    ``,
-    task
+    ``
   ].join("\n");
+  return step0 + task;
 }
 async function submitDesign(args) {
   const rawDir = path2.join(args.projectDir, "raw");
   const listing = await stageSourceIndex(rawDir, args.rawDocs);
-  const prompt = withSkill(args.skillText, buildDesignPrompt(args, listing));
+  const prompt = withSkill(args.skillText, buildDesignPrompt(args, listing), args.skillInjection);
   return submit(args.controller, {
     cwd: args.projectDir,
     agentPreset: args.agentPreset,
@@ -1288,7 +1307,7 @@ async function submitIngest(args) {
   const rawDir = path2.join(args.projectDir, "raw");
   const listing = await stageSourceIndex(rawDir, args.rawDocs);
   const doneTool = args.doneTool ?? "wiki_done";
-  const prompt = withSkill(args.skillText, buildIngestPrompt(args, listing, doneTool));
+  const prompt = withSkill(args.skillText, buildIngestPrompt(args, listing, doneTool), args.skillInjection);
   return submit(args.controller, {
     cwd: args.projectDir,
     agentPreset: args.agentPreset,
@@ -1302,7 +1321,7 @@ async function submitIngest(args) {
 }
 async function submitLintFix(args) {
   const doneTool = args.doneTool ?? "wiki_done";
-  const prompt = withSkill(args.skillText, buildLintFixPrompt(args, args.lintReport, doneTool));
+  const prompt = withSkill(args.skillText, buildLintFixPrompt(args, args.lintReport, doneTool), args.skillInjection);
   return submit(args.controller, {
     cwd: args.projectDir,
     agentPreset: args.agentPreset,
@@ -1350,7 +1369,7 @@ async function submitBuild(args) {
   const rawDir = path2.join(args.projectDir, "raw");
   const listing = await stageSourceIndex(rawDir, args.rawDocs);
   const doneTool = args.doneTool ?? "wiki_done";
-  const prompt = withSkill(args.skillText, buildFullBuildPrompt(args, listing, doneTool));
+  const prompt = withSkill(args.skillText, buildFullBuildPrompt(args, listing, doneTool), args.skillInjection);
   return submit(args.controller, {
     cwd: args.projectDir,
     agentPreset: args.agentPreset,
@@ -1582,8 +1601,10 @@ var DEFAULT_CONFIG = {
   ingestPermissionPreset: "auto",
   ingestWorkspaceId: "",
   ingestModel: "",
+  skillInjection: "auto",
   apiPort: 18781
 };
+var SKILL_INJECTIONS = ["inline", "tool", "auto"];
 function resolveConfig(config, profileDataDir) {
   const apiPort = Number(config?.apiPort ?? DEFAULT_CONFIG.apiPort);
   const ingestAgentPreset = (config?.ingestAgentPreset ?? DEFAULT_CONFIG.ingestAgentPreset) || "";
@@ -1604,6 +1625,7 @@ function resolveConfig(config, profileDataDir) {
     ingestPermissionPreset,
     ingestWorkspaceId,
     ingestModel,
+    skillInjection: SKILL_INJECTIONS.includes(config?.skillInjection) ? config.skillInjection : DEFAULT_CONFIG.skillInjection,
     apiPort: Number.isFinite(apiPort) && apiPort > 0 ? apiPort : DEFAULT_CONFIG.apiPort
   };
 }
@@ -1827,9 +1849,11 @@ function activate(ctx, config) {
     saveSettings: (patch) => {
       if (patch.ingestWorkspaceId !== void 0) resolved.ingestWorkspaceId = patch.ingestWorkspaceId.trim();
       if (patch.ingestModel !== void 0) resolved.ingestModel = patch.ingestModel.trim();
+      if (patch.skillInjection !== void 0) resolved.skillInjection = patch.skillInjection;
       void store.saveSettings({
         ingestWorkspaceId: patch.ingestWorkspaceId?.trim(),
-        ingestModel: patch.ingestModel?.trim()
+        ingestModel: patch.ingestModel?.trim(),
+        skillInjection: patch.skillInjection
       });
       return resolved;
     },
@@ -1853,7 +1877,8 @@ function activate(ctx, config) {
         workspaceId: resolved.ingestWorkspaceId || void 0,
         modelSelection: parseModelSelection(resolved.ingestModel),
         permissionPreset: resolved.ingestPermissionPreset,
-        skillText: builtinSkill,
+        skillText: resolved.skillInjection === "inline" ? builtinSkill : "",
+        skillInjection: resolved.skillInjection,
         signal: new AbortController().signal,
         rawDocs
       });
@@ -1878,7 +1903,8 @@ function activate(ctx, config) {
         workspaceId: resolved.ingestWorkspaceId || void 0,
         modelSelection: parseModelSelection(resolved.ingestModel),
         permissionPreset: resolved.ingestPermissionPreset,
-        skillText: builtinSkill,
+        skillText: resolved.skillInjection === "inline" ? builtinSkill : "",
+        skillInjection: resolved.skillInjection,
         signal: new AbortController().signal,
         rawDocs,
         doneTool: "wiki_done"
@@ -1904,7 +1930,8 @@ function activate(ctx, config) {
         workspaceId: resolved.ingestWorkspaceId || void 0,
         modelSelection: parseModelSelection(resolved.ingestModel),
         permissionPreset: resolved.ingestPermissionPreset,
-        skillText: builtinSkill,
+        skillText: resolved.skillInjection === "inline" ? builtinSkill : "",
+        skillInjection: resolved.skillInjection,
         signal: new AbortController().signal,
         rawDocs,
         doneTool: "wiki_done"
@@ -1932,7 +1959,8 @@ function activate(ctx, config) {
         workspaceId: resolved.ingestWorkspaceId || void 0,
         modelSelection: parseModelSelection(resolved.ingestModel),
         permissionPreset: resolved.ingestPermissionPreset,
-        skillText: builtinSkill,
+        skillText: resolved.skillInjection === "inline" ? builtinSkill : "",
+        skillInjection: resolved.skillInjection,
         signal: new AbortController().signal,
         rawDocs,
         doneTool: "wiki_done",
@@ -2278,7 +2306,8 @@ async function handleApiRequest(req, res, deps) {
         ingestWorkspaceId: deps.resolved.ingestWorkspaceId,
         ingestModel: deps.resolved.ingestModel,
         ingestAgentPreset: deps.resolved.ingestAgentPreset,
-        ingestPermissionPreset: deps.resolved.ingestPermissionPreset
+        ingestPermissionPreset: deps.resolved.ingestPermissionPreset,
+        skillInjection: deps.resolved.skillInjection
       }
     });
     return;
@@ -2293,7 +2322,8 @@ async function handleApiRequest(req, res, deps) {
     }
     const next = deps.saveSettings({
       ingestWorkspaceId: typeof body.ingestWorkspaceId === "string" ? body.ingestWorkspaceId : void 0,
-      ingestModel: typeof body.ingestModel === "string" ? body.ingestModel : void 0
+      ingestModel: typeof body.ingestModel === "string" ? body.ingestModel : void 0,
+      skillInjection: SKILL_INJECTIONS.includes(body.skillInjection) ? body.skillInjection : void 0
     });
     writeJson(res, 200, {
       ok: true,
@@ -2301,7 +2331,8 @@ async function handleApiRequest(req, res, deps) {
         ingestWorkspaceId: next.ingestWorkspaceId,
         ingestModel: next.ingestModel,
         ingestAgentPreset: next.ingestAgentPreset,
-        ingestPermissionPreset: next.ingestPermissionPreset
+        ingestPermissionPreset: next.ingestPermissionPreset,
+        skillInjection: next.skillInjection
       }
     });
     return;

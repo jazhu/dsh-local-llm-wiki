@@ -43,18 +43,20 @@ const args = {
     { name: 'e5f6a7b8_接口配置.md', sha256: 'ab'.repeat(32), size: 51200 },
   ],
   skillText: '<skill-body>',
+  skillInjection: 'inline',
 }
 
-export async function render(kind) {
+export async function render(kind, mode = 'inline') {
   captured.length = 0
-  if (kind === 'design') await si.submitDesign(args)
-  else if (kind === 'ingest') await si.submitIngest({ ...args, doneTool: 'wiki_done' })
-  else if (kind === 'build') await si.submitBuild({ ...args, doneTool: 'wiki_done' })
-  else if (kind === 'lintfix') await si.submitLintFix({ ...args, lintReport: '- [error] entities/a.md: 链接指向不存在的页面 b.md', doneTool: 'wiki_done' })
+  const a = { ...args, skillInjection: mode, skillText: mode === 'inline' ? '<skill-body>' : '' }
+  if (kind === 'design') await si.submitDesign(a)
+  else if (kind === 'ingest') await si.submitIngest({ ...a, doneTool: 'wiki_done' })
+  else if (kind === 'build') await si.submitBuild({ ...a, doneTool: 'wiki_done' })
+  else if (kind === 'lintfix') await si.submitLintFix({ ...a, lintReport: '- [error] entities/a.md: 链接指向不存在的页面 b.md', doneTool: 'wiki_done' })
   else if (kind === 'withSkill') {
     // withSkill is private; the design prompt is wrapped by it, so render the
     // design prompt (skillText non-empty) and inspect the banner portion.
-    await si.submitDesign(args)
+    await si.submitDesign(a)
   }
   return captured[0] ?? ''
 }

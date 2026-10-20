@@ -25,6 +25,7 @@ import { appendFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
+import type { SkillInjection } from './types.ts'
 
 /** The slice of the host `sessionController` this module uses (mirrors auto-session.ts:373). */
 export interface SessionControllerLike {
@@ -160,9 +161,16 @@ export interface ProjectSubmitArgs {
   /**
    * Full text of the bundled llm-wiki skill. When present it is prepended to
    * the prompt so the session follows the skill without loading it from disk
-   * (requirement ③: the plugin carries its own skill).
+   * (requirement ③: the plugin carries its own skill). Only used when
+   * `skillInjection` is `inline`.
    */
   skillText?: string
+  /**
+   * How the llm-wiki skill reaches the session (user-requested 2026-10-20):
+   * inline = prepend skillText; tool = name the host skill tool only;
+   * auto = tool + a compact core-protocol digest fallback.
+   */
+  skillInjection?: SkillInjection
 }
 
 export interface SubmitResult {
@@ -190,38 +198,63 @@ async function stageSourceIndex(rawDir: string, docs: { name: string; sha256: st
 }
 
 /**
- * Wrap a task prompt with the bundled llm-wiki skill (when available): the
- * skill text goes first under a clear header, then the task instructions.
- *
- * The skill is ~75 KB of Chinese markdown inlined by the host at activation
- * (dist/skills/llm-wiki.md, registered to ~/.dsh/skills/llm-wiki/SKILL.md).
- * The banner below tells the session how to navigate it:正文在
- * <llm-wiki-skill> 块，附属文件在 <llm-wiki-skill-attachment> 块内按
- * `BUNDLED: <path>` 标记定位，技能正文要求「读取 references/X.md」时去那里找。
+ * Compact digest of the llm-wiki skill's hard protocol numbers, used as a
+ * fallback when the session is asked to load the skill through the host
+ * `skill` tool (skillInjection = 'auto'). The five-section task prompt already
+ * carries these numbers; this digest only exists so a session that fails to
+ * load the skill still follows the workflow instead of improvising.
  */
-function withSkill(skillText: string | undefined, task: string): string {
-  if (!skillText || !skillText.trim()) return task
-  return [
-    `<llm-wiki-skill>`,
-    skillText.trim(),
-    `</llm-wiki-skill>`,
+const SKILL_CORE_DIGEST = `核心协议要点（未能加载技能全文时按此执行）：
+- 目录结构：raw/（不可变）+ <wiki>/（SCHEMA.md / index.md / log.md / entities / concepts / comparisons / queries）；项目根目录只允许 raw/ 与 <wiki>/。
+- ingest 四阶段：Phase1 规划（SCHEMA.md 页面清单 + manifest.json SHA256 增量）→ Phase2 分批并行提取（MAX_CONCURRENT_AGENTS=5，子 Agent 只输出 JSON，必须写 <wiki>/.ingest-cache/<slug>.json，超时 300s、失败重试 1 次）→ Phase3 按页面模板组装 Markdown（frontmatter：title/tags/sources/updated/confidence/aliases/related）→ Phase4 覆盖率验证 + 更新 manifest + 递归清理。
+- SCHEMA.md 至少覆盖：领域定义、目录约定、frontmatter 必填字段、标签体系、页面模板选择、交叉引用规则、index.md / log.md 规范。
+- 不从记忆回答领域内容，一切信息来自源文档；页面正文与源文档语言一致，slug 用英文短横线命名。`
+
+/**
+ * Wrap a task prompt according to the skill-injection mode:
+ * - inline: the full skill text goes first under a clear header, then the task.
+ * - tool:   the task leads with a Step 0 that requires loading llm-wiki through
+ *           the host `skill` tool; nothing else is prepended.
+ * - auto:   same as tool, plus the compact protocol digest so the session still
+ *           follows the hard numbers when the skill call fails.
+ */
+function withSkill(skillText: string | undefined, task: string, mode: SkillInjection = 'inline'): string {
+  if (mode === 'inline') {
+    if (!skillText || !skillText.trim()) return task
+    return [
+      `<llm-wiki-skill>`,
+      skillText.trim(),
+      `</llm-wiki-skill>`,
+      ``,
+      `> 阅读指引：上面是 llm-wiki 技能全文（含标准目录结构、7 大方法、核心约束与按需加载规则）。`,
+      `> 技能正文中要求「读取 references/<file>.md」或「读取 scripts/<file>」时，请在上方全文末尾的`,
+      `> <llm-wiki-skill-attachment> 块内按同名 \`BUNDLED: <path>\` 标记定位对应内容（schema-guide.md /`,
+      `> templates.md / ingest-workflow.md / lint-rules.md / lint.py / evaluate.py 已全文内联，无需访问磁盘）。`,
+      ``,
+      `---`,
+      ``,
+      task,
+    ].join('\n')
+  }
+  // tool / auto: the skill is loaded on demand through the host tool.
+  const step0 = [
+    `## 步骤 0：加载 llm-wiki 技能`,
+    `本任务依赖 llm-wiki 技能。请立即调用工具 \`skill\`，参数 \`{"name":"llm-wiki"}\`，加载其全文并严格遵循。`,
+    `若该工具不可用或调用失败，不得放弃任务——按下述核心协议要点继续执行：`,
     ``,
-    `> 阅读指引：上面是 llm-wiki 技能全文（含标准目录结构、7 大方法、核心约束与按需加载规则）。`,
-    `> 技能正文中要求「读取 references/<file>.md」或「读取 scripts/<file>」时，请在上方全文末尾的`,
-    `> <llm-wiki-skill-attachment> 块内按同名 \`BUNDLED: <path>\` 标记定位对应内容（schema-guide.md /`,
-    `> templates.md / ingest-workflow.md / lint-rules.md / lint.py / evaluate.py 已全文内联，无需访问磁盘）。`,
+    SKILL_CORE_DIGEST,
     ``,
     `---`,
     ``,
-    task,
   ].join('\n')
+  return step0 + task
 }
 
 /** Submit a design (SCHEMA draft) session for one project. */
 export async function submitDesign(args: ProjectSubmitArgs): Promise<SubmitResult> {
   const rawDir = path.join(args.projectDir, 'raw')
   const listing = await stageSourceIndex(rawDir, args.rawDocs)
-  const prompt = withSkill(args.skillText, buildDesignPrompt(args, listing))
+  const prompt = withSkill(args.skillText, buildDesignPrompt(args, listing), args.skillInjection)
   return submit(args.controller, {
     cwd: args.projectDir,
     agentPreset: args.agentPreset,
@@ -239,7 +272,7 @@ export async function submitIngest(args: ProjectSubmitArgs): Promise<SubmitResul
   const rawDir = path.join(args.projectDir, 'raw')
   const listing = await stageSourceIndex(rawDir, args.rawDocs)
   const doneTool = args.doneTool ?? 'wiki_done'
-  const prompt = withSkill(args.skillText, buildIngestPrompt(args, listing, doneTool))
+  const prompt = withSkill(args.skillText, buildIngestPrompt(args, listing, doneTool), args.skillInjection)
   return submit(args.controller, {
     cwd: args.projectDir,
     agentPreset: args.agentPreset,
@@ -266,7 +299,7 @@ export async function submitIngest(args: ProjectSubmitArgs): Promise<SubmitResul
  */
 export async function submitLintFix(args: ProjectSubmitArgs & { lintReport: string }): Promise<SubmitResult> {
   const doneTool = args.doneTool ?? 'wiki_done'
-  const prompt = withSkill(args.skillText, buildLintFixPrompt(args, args.lintReport, doneTool))
+  const prompt = withSkill(args.skillText, buildLintFixPrompt(args, args.lintReport, doneTool), args.skillInjection)
   return submit(args.controller, {
     cwd: args.projectDir,
     agentPreset: args.agentPreset,
@@ -317,7 +350,7 @@ export async function submitBuild(args: ProjectSubmitArgs): Promise<SubmitResult
   const rawDir = path.join(args.projectDir, 'raw')
   const listing = await stageSourceIndex(rawDir, args.rawDocs)
   const doneTool = args.doneTool ?? 'wiki_done'
-  const prompt = withSkill(args.skillText, buildFullBuildPrompt(args, listing, doneTool))
+  const prompt = withSkill(args.skillText, buildFullBuildPrompt(args, listing, doneTool), args.skillInjection)
   return submit(args.controller, {
     cwd: args.projectDir,
     agentPreset: args.agentPreset,

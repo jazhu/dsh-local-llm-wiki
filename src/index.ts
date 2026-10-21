@@ -48,7 +48,9 @@ export interface Config {
   /**
    * How the bundled llm-wiki skill reaches a build session (2026-10-20):
    * inline = prepend the full skill text; tool = name the host skill tool;
-   * auto = tool + a compact protocol digest as fallback.
+   * auto = tool + a compact protocol digest as fallback. Default tool
+   * (user-requested 2026-10-21): the plugin registers the skill at
+   * activation, so prompts no longer carry the skill text.
    */
   skillInjection: SkillInjection
   apiPort: number
@@ -60,7 +62,7 @@ export const DEFAULT_CONFIG: Config = {
   ingestPermissionPreset: 'auto',
   ingestWorkspaceId: '',
   ingestModel: '',
-  skillInjection: 'auto',
+  skillInjection: 'tool',
   apiPort: 18781,
 }
 
@@ -199,7 +201,8 @@ function activate(ctx: ContextLike, config?: Partial<Config>): void {
         } catch { /* fall through to markStalled */ }
       }
     }
-    const stalled = await store.markStalled()
+    const { stalled, recovered } = await store.markStalled()
+    if (recovered.length) logInfo(`已从磁盘恢复 ${recovered.length} 个构建已完成但会话中断的项目（页面重新收割）`)
     if (stalled.length) logWarn(`已标记 ${stalled.length} 个中断的项目为 failed`)
     // Re-index every project that has harvested pages on disk.
     for (const p of store.list()) {

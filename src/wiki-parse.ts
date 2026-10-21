@@ -149,6 +149,7 @@ export function parseWikiPage(args: {
     sources: asArray(fm.sources),
     confidence: confidenceOf(fm.confidence),
     updated: asString(fm.updated),
+    frontKeys: Object.keys(fm),
     text: body.trim(),
     summary: gist(body),
   }

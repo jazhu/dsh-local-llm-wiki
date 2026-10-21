@@ -851,7 +851,7 @@ function SettingsTab(props: { showToast: (t: string, k?: 'err' | 'ok') => void }
   const [workspaceId, setWorkspaceId] = useState('')
   const [agentPreset, setAgentPreset] = useState('')
   const [permPreset, setPermPreset] = useState('')
-  const [skillInjection, setSkillInjection] = useState<'inline' | 'tool' | 'auto'>('auto')
+  const [skillInjection, setSkillInjection] = useState<'inline' | 'tool' | 'auto'>('tool')
   const [err, setErr] = useState('')
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -926,7 +926,7 @@ function SettingsTab(props: { showToast: (t: string, k?: 'err' | 'ok') => void }
           'select',
           { className: 'dsw-input', style: { maxWidth: 340 }, value: skillInjection, onChange: (e: any) => setSkillInjection(e.target.value) },
           h('option', { value: 'inline' }, 'inline（完整内联 75KB 技能全文）'),
-          h('option', { value: 'tool' }, 'tool（调用 skill 工具，提示词最精简）'),
+          h('option', { value: 'tool' }, 'tool（直接调用 skill 工具，提示词无技能原文，默认）'),
           h('option', { value: 'auto' }, 'auto（调用 skill 工具 + 核心要点兜底）'),
         ),
       ),
@@ -934,7 +934,7 @@ function SettingsTab(props: { showToast: (t: string, k?: 'err' | 'ok') => void }
         skillInjection === 'inline'
           ? '每次构建会话都把 75KB 技能全文注入提示词，最稳健但体积大。'
           : skillInjection === 'tool'
-            ? '提示词只要求会话调用 skill("llm-wiki") 加载技能，最精简；若模型不调用则只剩任务里的硬数字。'
+            ? '提示词不含技能原文，仅要求会话第一步调用 skill("llm-wiki") 加载插件激活时已注册的 llm-wiki 技能，最精简。'
             : '提示词要求调用 skill 工具，同时内联约 1.5KB 核心协议要点；模型不调用也有底线。',
       ),
       h('div', { className: 'dsw-row', style: { marginTop: 10 } },

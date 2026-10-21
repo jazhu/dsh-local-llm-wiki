@@ -214,11 +214,12 @@ const SKILL_CORE_DIGEST = `核心协议要点（未能加载技能全文时按�
  * Wrap a task prompt according to the skill-injection mode:
  * - inline: the full skill text goes first under a clear header, then the task.
  * - tool:   the task leads with a Step 0 that requires loading llm-wiki through
- *           the host `skill` tool; nothing else is prepended.
+ *           the host `skill` tool; nothing else is prepended (the skill was
+ *           registered on activation, so the prompt carries no skill text).
  * - auto:   same as tool, plus the compact protocol digest so the session still
  *           follows the hard numbers when the skill call fails.
  */
-function withSkill(skillText: string | undefined, task: string, mode: SkillInjection = 'inline'): string {
+function withSkill(skillText: string | undefined, task: string, mode: SkillInjection = 'tool'): string {
   if (mode === 'inline') {
     if (!skillText || !skillText.trim()) return task
     return [
@@ -236,18 +237,30 @@ function withSkill(skillText: string | undefined, task: string, mode: SkillInjec
       task,
     ].join('\n')
   }
-  // tool / auto: the skill is loaded on demand through the host tool.
-  const step0 = [
+  if (mode === 'auto') {
+    return [
+      `## 步骤 0：加载 llm-wiki 技能`,
+      `本任务依赖 llm-wiki 技能（插件激活时已自动注册）。请立即调用工具 \`skill\`，参数 \`{"name":"llm-wiki"}\`，加载其全文并严格遵循。`,
+      `若该工具不可用或调用失败，不得放弃任务——按下述核心协议要点继续执行：`,
+      ``,
+      SKILL_CORE_DIGEST,
+      ``,
+      `---`,
+      ``,
+      task,
+    ].join('\n')
+  }
+  // tool (default, user-requested 2026-10-21): no skill text in the prompt at
+  // all — the skill is a host capability registered at activation time.
+  return [
     `## 步骤 0：加载 llm-wiki 技能`,
-    `本任务依赖 llm-wiki 技能。请立即调用工具 \`skill\`，参数 \`{"name":"llm-wiki"}\`，加载其全文并严格遵循。`,
-    `若该工具不可用或调用失败，不得放弃任务——按下述核心协议要点继续执行：`,
-    ``,
-    SKILL_CORE_DIGEST,
+    `本任务依赖 llm-wiki 技能（插件激活时已自动注册到宿主技能目录）。请立即调用工具 \`skill\`，参数 \`{"name":"llm-wiki"}\`，加载其全文并严格遵循；`,
+    `技能全文是任务方法论的唯一来源，本提示词不再重复其内容。`,
     ``,
     `---`,
     ``,
+    task,
   ].join('\n')
-  return step0 + task
 }
 
 /** Submit a design (SCHEMA draft) session for one project. */

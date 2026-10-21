@@ -119,6 +119,7 @@ function parseWikiPage(args) {
     sources: asArray(fm.sources),
     confidence: confidenceOf(fm.confidence),
     updated: asString(fm.updated),
+    frontKeys: Object.keys(fm),
     text: body.trim(),
     summary: gist(body)
   };
@@ -276,6 +277,7 @@ function migrateLegacyJson(db, dataDir) {
 var REGISTRY_FILE = "registry.json";
 var MANIFEST_FILE = "manifest.json";
 var SETTINGS_FILE = "settings.json";
+var STALE_INTERRUPT_MSG = "\u4F1A\u8BDD\u5728\u63D2\u4EF6\u91CD\u542F\u65F6\u4E2D\u65AD\uFF0C\u9700\u8981\u91CD\u65B0\u6784\u5EFA";
 var HARVEST_KINDS = ["entities", "concepts", "comparisons", "queries"];
 var ProjectStore = class {
   dataDir;
@@ -690,24 +692,52 @@ var ProjectStore = class {
     void this.persist();
   }
   /**
-   * On boot, any project stuck mid-flight (designing/ingesting/harvesting) can
-   * no longer be trusted — its DSH session is gone. Mark it `failed` with a
-   * resume hint so the UI offers a rebuild instead of a spinner forever.
+   * On boot, resolve projects left mid-flight (designing/ingesting/harvesting)
+   * by a plugin restart — their DSH session is gone. Before condemning one,
+   * check the disk: a session that finished writing wiki pages but died before
+   * calling wiki_done is NOT broken (the knowledge base is built and
+   * searchable), so recover it to `ready` from a harvest. Only when there is
+   * genuinely no content on disk does it become `failed` with a resume hint.
+   * Also heals records already saved as `failed` carrying the stale-interrupt
+   * message (wrongly condemned by the old unconditional logic), so the error
+   * stops haunting a successfully built project across restarts.
    */
   async markStalled() {
     await this.load();
     const stalled = [];
+    const recovered = [];
     for (const p of this.registry.projects) {
-      if (p.status === "designing" || p.status === "ingesting" || p.status === "harvesting") {
+      const midflight = p.status === "designing" || p.status === "ingesting" || p.status === "harvesting";
+      const staleInterrupt = p.status === "failed" && p.error === STALE_INTERRUPT_MSG;
+      if (!midflight && !staleInterrupt) continue;
+      if (p.status !== "designing") {
+        try {
+          const pages = await this.harvest(p.id);
+          if (pages.length > 0) {
+            p.status = "ready";
+            p.error = void 0;
+            p.dshSessionId = void 0;
+            this.touch(p);
+            recovered.push(p.id);
+            continue;
+          }
+        } catch {
+        }
+      }
+      if (midflight) {
         p.status = "failed";
-        p.error = "\u4F1A\u8BDD\u5728\u63D2\u4EF6\u91CD\u542F\u65F6\u4E2D\u65AD\uFF0C\u9700\u8981\u91CD\u65B0\u6784\u5EFA";
+        p.error = STALE_INTERRUPT_MSG;
         p.dshSessionId = void 0;
+        this.touch(p);
+        stalled.push(p.id);
+      } else {
+        p.error = "\u4E0A\u4E00\u6B21\u4F1A\u8BDD\u672A\u5B8C\u6210\u4E14\u78C1\u76D8\u4E0A\u6CA1\u6709\u5DF2\u6784\u5EFA\u9875\u9762\uFF0C\u9700\u8981\u91CD\u65B0\u6784\u5EFA";
         this.touch(p);
         stalled.push(p.id);
       }
     }
-    if (stalled.length) await this.persist();
-    return stalled;
+    if (stalled.length || recovered.length) await this.persist();
+    return { stalled, recovered };
   }
   /** Re-load harvested pages from disk after a restart (index rebuild). */
   // ---- settings persistence (2026-10-11) ----------------------------------
@@ -1258,7 +1288,7 @@ var SKILL_CORE_DIGEST = `\u6838\u5FC3\u534F\u8BAE\u8981\u70B9\uFF08\u672A\u80FD\
 - ingest \u56DB\u9636\u6BB5\uFF1APhase1 \u89C4\u5212\uFF08SCHEMA.md \u9875\u9762\u6E05\u5355 + manifest.json SHA256 \u589E\u91CF\uFF09\u2192 Phase2 \u5206\u6279\u5E76\u884C\u63D0\u53D6\uFF08MAX_CONCURRENT_AGENTS=5\uFF0C\u5B50 Agent \u53EA\u8F93\u51FA JSON\uFF0C\u5FC5\u987B\u5199 <wiki>/.ingest-cache/<slug>.json\uFF0C\u8D85\u65F6 300s\u3001\u5931\u8D25\u91CD\u8BD5 1 \u6B21\uFF09\u2192 Phase3 \u6309\u9875\u9762\u6A21\u677F\u7EC4\u88C5 Markdown\uFF08frontmatter\uFF1Atitle/tags/sources/updated/confidence/aliases/related\uFF09\u2192 Phase4 \u8986\u76D6\u7387\u9A8C\u8BC1 + \u66F4\u65B0 manifest + \u9012\u5F52\u6E05\u7406\u3002
 - SCHEMA.md \u81F3\u5C11\u8986\u76D6\uFF1A\u9886\u57DF\u5B9A\u4E49\u3001\u76EE\u5F55\u7EA6\u5B9A\u3001frontmatter \u5FC5\u586B\u5B57\u6BB5\u3001\u6807\u7B7E\u4F53\u7CFB\u3001\u9875\u9762\u6A21\u677F\u9009\u62E9\u3001\u4EA4\u53C9\u5F15\u7528\u89C4\u5219\u3001index.md / log.md \u89C4\u8303\u3002
 - \u4E0D\u4ECE\u8BB0\u5FC6\u56DE\u7B54\u9886\u57DF\u5185\u5BB9\uFF0C\u4E00\u5207\u4FE1\u606F\u6765\u81EA\u6E90\u6587\u6863\uFF1B\u9875\u9762\u6B63\u6587\u4E0E\u6E90\u6587\u6863\u8BED\u8A00\u4E00\u81F4\uFF0Cslug \u7528\u82F1\u6587\u77ED\u6A2A\u7EBF\u547D\u540D\u3002`;
-function withSkill(skillText, task, mode = "inline") {
+function withSkill(skillText, task, mode = "tool") {
   if (mode === "inline") {
     if (!skillText || !skillText.trim()) return task;
     return [
@@ -1276,17 +1306,28 @@ function withSkill(skillText, task, mode = "inline") {
       task
     ].join("\n");
   }
-  const step0 = [
+  if (mode === "auto") {
+    return [
+      `## \u6B65\u9AA4 0\uFF1A\u52A0\u8F7D llm-wiki \u6280\u80FD`,
+      `\u672C\u4EFB\u52A1\u4F9D\u8D56 llm-wiki \u6280\u80FD\uFF08\u63D2\u4EF6\u6FC0\u6D3B\u65F6\u5DF2\u81EA\u52A8\u6CE8\u518C\uFF09\u3002\u8BF7\u7ACB\u5373\u8C03\u7528\u5DE5\u5177 \`skill\`\uFF0C\u53C2\u6570 \`{"name":"llm-wiki"}\`\uFF0C\u52A0\u8F7D\u5176\u5168\u6587\u5E76\u4E25\u683C\u9075\u5FAA\u3002`,
+      `\u82E5\u8BE5\u5DE5\u5177\u4E0D\u53EF\u7528\u6216\u8C03\u7528\u5931\u8D25\uFF0C\u4E0D\u5F97\u653E\u5F03\u4EFB\u52A1\u2014\u2014\u6309\u4E0B\u8FF0\u6838\u5FC3\u534F\u8BAE\u8981\u70B9\u7EE7\u7EED\u6267\u884C\uFF1A`,
+      ``,
+      SKILL_CORE_DIGEST,
+      ``,
+      `---`,
+      ``,
+      task
+    ].join("\n");
+  }
+  return [
     `## \u6B65\u9AA4 0\uFF1A\u52A0\u8F7D llm-wiki \u6280\u80FD`,
-    `\u672C\u4EFB\u52A1\u4F9D\u8D56 llm-wiki \u6280\u80FD\u3002\u8BF7\u7ACB\u5373\u8C03\u7528\u5DE5\u5177 \`skill\`\uFF0C\u53C2\u6570 \`{"name":"llm-wiki"}\`\uFF0C\u52A0\u8F7D\u5176\u5168\u6587\u5E76\u4E25\u683C\u9075\u5FAA\u3002`,
-    `\u82E5\u8BE5\u5DE5\u5177\u4E0D\u53EF\u7528\u6216\u8C03\u7528\u5931\u8D25\uFF0C\u4E0D\u5F97\u653E\u5F03\u4EFB\u52A1\u2014\u2014\u6309\u4E0B\u8FF0\u6838\u5FC3\u534F\u8BAE\u8981\u70B9\u7EE7\u7EED\u6267\u884C\uFF1A`,
-    ``,
-    SKILL_CORE_DIGEST,
+    `\u672C\u4EFB\u52A1\u4F9D\u8D56 llm-wiki \u6280\u80FD\uFF08\u63D2\u4EF6\u6FC0\u6D3B\u65F6\u5DF2\u81EA\u52A8\u6CE8\u518C\u5230\u5BBF\u4E3B\u6280\u80FD\u76EE\u5F55\uFF09\u3002\u8BF7\u7ACB\u5373\u8C03\u7528\u5DE5\u5177 \`skill\`\uFF0C\u53C2\u6570 \`{"name":"llm-wiki"}\`\uFF0C\u52A0\u8F7D\u5176\u5168\u6587\u5E76\u4E25\u683C\u9075\u5FAA\uFF1B`,
+    `\u6280\u80FD\u5168\u6587\u662F\u4EFB\u52A1\u65B9\u6CD5\u8BBA\u7684\u552F\u4E00\u6765\u6E90\uFF0C\u672C\u63D0\u793A\u8BCD\u4E0D\u518D\u91CD\u590D\u5176\u5185\u5BB9\u3002`,
     ``,
     `---`,
-    ``
+    ``,
+    task
   ].join("\n");
-  return step0 + task;
 }
 async function submitDesign(args) {
   const rawDir = path2.join(args.projectDir, "raw");
@@ -1544,26 +1585,135 @@ function buildFullBuildPrompt(args, listing, doneTool) {
 // src/lint.ts
 import path3 from "node:path";
 var MD_LINK = /\[[^\]]*\]\(([^)]+\.md)(#[^)]*)?\)/g;
+var ENTITY_SECTIONS = ["\u5B9A\u4F4D", "\u6838\u5FC3\u80FD\u529B", "\u67B6\u6784", "\u5173\u7CFB", "\u573A\u666F", "\u90E8\u7F72\u914D\u7F6E", "\u53C2\u89C1"];
+var REQUIRED_FM_KEYS = ["title", "tags", "sources", "updated"];
+var OPTIONAL_FM_KEYS = ["confidence", "aliases", "related"];
+var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function h2Sections(text) {
+  const out = [];
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^##\s+(.+)$/.exec(line);
+    if (m) out.push(m[1].trim());
+  }
+  return out;
+}
+function scenarioCountUnder(text, sectionTitle) {
+  const lines = text.split(/\r?\n/);
+  let inside = false;
+  let count = 0;
+  for (const line of lines) {
+    if (/^##\s+/.test(line)) {
+      inside = line.slice(3).trim().includes(sectionTitle);
+      continue;
+    }
+    if (!inside) continue;
+    if (/^###\s+/.test(line) || /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line)) count++;
+  }
+  return count;
+}
+function tableColumnCounts(text) {
+  const lines = text.split(/\r?\n/);
+  const cols = [];
+  for (let i = 0; i < lines.length - 1; i++) {
+    const header = lines[i];
+    const sep = lines[i + 1];
+    if (!header.includes("|") || !/^\s*\|?[\s:|-]+\|/.test(sep)) continue;
+    if (!/^[\s|:-]+$/.test(sep)) continue;
+    cols.push(header.split("|").filter((c) => c.trim() !== "").length);
+  }
+  return cols;
+}
 function lintPages(pages) {
   const issues = [];
+  const push = (severity, ruleCode, message, page) => issues.push({ severity, ruleCode, message, page });
   const present = /* @__PURE__ */ new Set();
   for (const p of pages) {
     present.add(normalize(p.path));
   }
   const inbound = /* @__PURE__ */ new Map();
   for (const p of pages) {
+    const text = p.text ?? "";
     if (!p.title || p.title.trim() === "" || /\.(md|markdown)$/i.test(p.title)) {
-      issues.push({ severity: "warn", message: `\u9875\u9762\u7F3A\u5C11\u6807\u9898`, page: p.path });
+      push("warn", "R1", "\u9875\u9762\u7F3A\u5C11\u6807\u9898", p.path);
+    }
+    const keys = new Set(p.frontKeys ?? []);
+    const missingReq = REQUIRED_FM_KEYS.filter((k) => !keys.has(k));
+    if (missingReq.length) {
+      push("warn", "R4", `frontmatter \u7F3A\u5FC5\u586B\u5B57\u6BB5: ${missingReq.join(", ")}`, p.path);
+    }
+    const missingOpt = OPTIONAL_FM_KEYS.filter((k) => !keys.has(k));
+    if (missingOpt.length) {
+      push("warn", "R4", `frontmatter \u7F3A\u5EFA\u8BAE\u5B57\u6BB5: ${missingOpt.join(", ")}`, p.path);
+    }
+    if (p.updated && !DATE_RE.test(p.updated)) {
+      push("warn", "Y3", `updated \u4E0D\u662F YYYY-MM-DD \u683C\u5F0F: "${p.updated}"`, p.path);
+    }
+    if (!(p.tags ?? []).some((t) => t.startsWith("type:"))) {
+      push("warn", "Y5", "frontmatter tags \u7F3A\u5C11 type: \u7C7B\u578B\u6807\u7B7E", p.path);
+    }
+    {
+      const lineCount = text.split(/\r?\n/).length;
+      if (lineCount > 800 || text.length > 3e4) {
+        push("warn", "Y1", `\u9875\u9762\u8D85\u957F\uFF08${lineCount} \u884C / ${text.length} \u5B57\u7B26\uFF09\uFF0C\u5EFA\u8BAE\u62C6\u5206`, p.path);
+      }
     }
     let m;
+    let outbound = 0;
     MD_LINK.lastIndex = 0;
-    const text = p.text ?? "";
     while (m = MD_LINK.exec(text)) {
       const target = resolveLink(p.path, m[1]);
       if (target && !present.has(target)) {
-        issues.push({ severity: "error", message: `\u94FE\u63A5\u6307\u5411\u4E0D\u5B58\u5728\u7684\u9875\u9762 ${m[1]}`, page: p.path });
+        push("error", "R2", `\u94FE\u63A5\u6307\u5411\u4E0D\u5B58\u5728\u7684\u9875\u9762 ${m[1]}`, p.path);
       } else if (target) {
+        outbound++;
         inbound.set(target, (inbound.get(target) ?? 0) + 1);
+      }
+    }
+    const minY4 = p.kind === "entities" ? 3 : 2;
+    if (p.kind !== "index" && outbound < minY4) {
+      push("warn", "Y4", `\u4EA4\u53C9\u5F15\u7528\u4E0D\u8DB3\uFF08${p.kind} \u9875\u81F3\u5C11 ${minY4} \u6761\u51FA\u94FE\uFF0C\u5F53\u524D ${outbound}\uFF09`, p.path);
+    }
+    if (p.kind === "entities") {
+      const h2 = h2Sections(text);
+      const found = ENTITY_SECTIONS.filter((s) => h2.some((x) => x.includes(s)));
+      if (found.length === 0) {
+        push("warn", "R5", `\u5B9E\u4F53\u9875\u672A\u6309\u6A21\u677F\u7EC4\u7EC7 H2 \u5C0F\u8282\uFF08\u5E94\u4E3A\uFF1A${ENTITY_SECTIONS.join(" \u2192 ")}\uFF09`, p.path);
+      } else {
+        const missing = ENTITY_SECTIONS.filter((s) => !found.includes(s));
+        if (missing.length) {
+          push("warn", "R5", `\u5B9E\u4F53\u9875\u7F3A H2 \u5C0F\u8282: ${missing.join("\u3001")}`, p.path);
+        }
+        const idx = found.map((s) => h2.findIndex((x) => x.includes(s)));
+        for (let i = 1; i < idx.length; i++) {
+          if (idx[i] < idx[i - 1]) {
+            push("warn", "R5", `\u5B9E\u4F53\u9875 H2 \u987A\u5E8F\u4E0E\u6A21\u677F\u4E0D\u7B26\uFF08\u5E94\u4E3A\uFF1A${ENTITY_SECTIONS.join(" \u2192 ")}\uFF09`, p.path);
+            break;
+          }
+        }
+      }
+      const sc = scenarioCountUnder(text, "\u573A\u666F");
+      if (sc < 2) {
+        push("warn", "R5", `\u573A\u666F\u5C0F\u8282\u5185\u5BB9\u4E0D\u8DB3\uFF08\u5B50\u9879 ${sc} \u4E2A\uFF0C\u81F3\u5C11 2 \u4E2A\uFF09`, p.path);
+      }
+      const cols = tableColumnCounts(text);
+      if (!cols.some((c) => c >= 3)) {
+        push("warn", "R5", "\u7F3A\u5C11\u81F3\u5C11\u4E00\u4E2A\u4E09\u5217\u53CA\u4EE5\u4E0A\u8868\u683C\uFF08\u5173\u7CFB/\u914D\u7F6E\u7C7B\u4FE1\u606F\u5FC5\u987B\u8868\u683C\u5316\uFF09", p.path);
+      }
+      if (!cols.some((c) => c === 2)) {
+        push("warn", "R5", "\u7F3A\u5C11\u81F3\u5C11\u4E00\u4E2A\u4E24\u5217\u8868\u683C\uFF08\u5982\u53C2\u6570/\u53D6\u503C\u5BF9\u7167\uFF09", p.path);
+      }
+    } else if (p.kind === "comparisons") {
+      const h2 = h2Sections(text);
+      if (h2.length < 4) {
+        push("warn", "R5", `\u5BF9\u6BD4\u9875 H2 \u5C0F\u8282\u4E0D\u8DB3\uFF08${h2.length} \u4E2A\uFF0C\u5E94 \u22654\uFF09`, p.path);
+      }
+      if (!/>\s*\*\*简单规则\*\*/.test(text)) {
+        push("warn", "R5", "\u5BF9\u6BD4\u9875\u7F3A\u300C> **\u7B80\u5355\u89C4\u5219**\u300D\u7ED3\u8BBA\u5F15\u7528\u5757", p.path);
+      }
+    } else if (p.kind === "concepts") {
+      const h2 = h2Sections(text);
+      if (h2.length < 3) {
+        push("warn", "R5", `\u6982\u5FF5\u9875 H2 \u5C0F\u8282\u4E0D\u8DB3\uFF08${h2.length} \u4E2A\uFF0C\u5E94 \u22654 \u952E\uFF09`, p.path);
       }
     }
   }
@@ -1571,7 +1721,7 @@ function lintPages(pages) {
     if (p.kind === "index") continue;
     const count = inbound.get(normalize(p.path)) ?? 0;
     if (count === 0) {
-      issues.push({ severity: "warn", message: `\u5B64\u7ACB\u9875\u9762\uFF08\u6CA1\u6709\u4EFB\u4F55\u9875\u9762\u94FE\u63A5\u5230\u5B83\uFF09`, page: p.path });
+      issues.push({ severity: "warn", ruleCode: "R3", message: "\u5B64\u7ACB\u9875\u9762\uFF08\u6CA1\u6709\u4EFB\u4F55\u9875\u9762\u94FE\u63A5\u5230\u5B83\uFF09", page: p.path });
     }
   }
   return {
@@ -1601,7 +1751,7 @@ var DEFAULT_CONFIG = {
   ingestPermissionPreset: "auto",
   ingestWorkspaceId: "",
   ingestModel: "",
-  skillInjection: "auto",
+  skillInjection: "tool",
   apiPort: 18781
 };
 var SKILL_INJECTIONS = ["inline", "tool", "auto"];
@@ -1701,7 +1851,8 @@ function activate(ctx, config) {
         }
       }
     }
-    const stalled = await store.markStalled();
+    const { stalled, recovered } = await store.markStalled();
+    if (recovered.length) logInfo(`\u5DF2\u4ECE\u78C1\u76D8\u6062\u590D ${recovered.length} \u4E2A\u6784\u5EFA\u5DF2\u5B8C\u6210\u4F46\u4F1A\u8BDD\u4E2D\u65AD\u7684\u9879\u76EE\uFF08\u9875\u9762\u91CD\u65B0\u6536\u5272\uFF09`);
     if (stalled.length) logWarn(`\u5DF2\u6807\u8BB0 ${stalled.length} \u4E2A\u4E2D\u65AD\u7684\u9879\u76EE\u4E3A failed`);
     for (const p of store.list()) {
       if (p.pageCount > 0) {

@@ -65,26 +65,34 @@ const inlineOnly = {
     ['skill body present', '<skill-body>'],
   ],
 }
-// tool / auto: must reference the host skill tool and the core digest.
+// tool / auto: must reference the host skill tool. Only auto embeds the digest.
 const toolMode = {
   design: [
     ['skill tool call', 'skill'],
     ['skill name', 'llm-wiki'],
-    ['core digest', '核心协议要点'],
   ],
   withSkill: [
     ['skill tool call', 'skill'],
     ['skill name', 'llm-wiki'],
-    ['core digest', '核心协议要点'],
     ['step 0', '步骤 0'],
   ],
+}
+// tool only: the leanest mode must NOT carry the digest at all.
+const toolOnly = {
+  withSkill: [['no digest in tool mode', 'NOT:核心协议要点']],
+}
+// auto only: the fallback digest must be embedded.
+const autoOnly = {
+  withSkill: [['core digest', '核心协议要点']],
 }
 
 const results = []
 const runChecks = async (kind, list, mode, text) => {
   for (const [label, needle] of list) {
     const variants = Array.isArray(needle) ? needle : [needle]
-    const hit = variants.some((n) => text.includes(n))
+    const hit = variants.some((n) =>
+      n.startsWith('NOT:') ? !text.includes(n.slice(4)) : text.includes(n),
+    )
     results.push({ kind, label, needle, hit, mode })
     console.log(`${hit ? 'PASS' : 'FAIL'}  [${kind}/${mode}] ${label}${hit ? '' : ` — missing: ${needle}`}`)
   }
@@ -103,6 +111,18 @@ for (const mode of ['inline']) {
 }
 for (const mode of ['tool', 'auto']) {
   for (const [kind, list] of Object.entries(toolMode)) {
+    const text = await render(kind, mode)
+    await runChecks(kind, list, mode, text)
+  }
+}
+for (const mode of ['tool']) {
+  for (const [kind, list] of Object.entries(toolOnly)) {
+    const text = await render(kind, mode)
+    await runChecks(kind, list, mode, text)
+  }
+}
+for (const mode of ['auto']) {
+  for (const [kind, list] of Object.entries(autoOnly)) {
     const text = await render(kind, mode)
     await runChecks(kind, list, mode, text)
   }

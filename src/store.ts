@@ -23,6 +23,9 @@ const REGISTRY_FILE = 'registry.json'
 const MANIFEST_FILE = 'manifest.json'
 const SETTINGS_FILE = 'settings.json'
 
+/** Boot-recovery message written when a mid-flight session left no content. */
+const STALE_INTERRUPT_MSG = '会话在插件重启时中断，需要重新构建'
+
 interface Registry {
   version: number
   projects: WikiProject[]
@@ -489,24 +492,55 @@ export class ProjectStore {
   }
 
   /**
-   * On boot, any project stuck mid-flight (designing/ingesting/harvesting) can
-   * no longer be trusted — its DSH session is gone. Mark it `failed` with a
-   * resume hint so the UI offers a rebuild instead of a spinner forever.
+   * On boot, resolve projects left mid-flight (designing/ingesting/harvesting)
+   * by a plugin restart — their DSH session is gone. Before condemning one,
+   * check the disk: a session that finished writing wiki pages but died before
+   * calling wiki_done is NOT broken (the knowledge base is built and
+   * searchable), so recover it to `ready` from a harvest. Only when there is
+   * genuinely no content on disk does it become `failed` with a resume hint.
+   * Also heals records already saved as `failed` carrying the stale-interrupt
+   * message (wrongly condemned by the old unconditional logic), so the error
+   * stops haunting a successfully built project across restarts.
    */
-  async markStalled(): Promise<string[]> {
+  async markStalled(): Promise<{ stalled: string[]; recovered: string[] }> {
     await this.load()
     const stalled: string[] = []
+    const recovered: string[] = []
     for (const p of this.registry.projects) {
-      if (p.status === 'designing' || p.status === 'ingesting' || p.status === 'harvesting') {
+      const midflight = p.status === 'designing' || p.status === 'ingesting' || p.status === 'harvesting'
+      const staleInterrupt = p.status === 'failed' && p.error === STALE_INTERRUPT_MSG
+      if (!midflight && !staleInterrupt) continue
+      // Design recovery is SCHEMA.md-based and done by the caller; content
+      // recovery here is harvest-based.
+      if (p.status !== 'designing') {
+        try {
+          const pages = await this.harvest(p.id)
+          if (pages.length > 0) {
+            p.status = 'ready'
+            p.error = undefined
+            p.dshSessionId = undefined
+            this.touch(p)
+            recovered.push(p.id)
+            continue
+          }
+        } catch { /* no readable content — fall through to stalled */ }
+      }
+      if (midflight) {
         p.status = 'failed'
-        p.error = '会话在插件重启时中断，需要重新构建'
+        p.error = STALE_INTERRUPT_MSG
         p.dshSessionId = undefined
+        this.touch(p)
+        stalled.push(p.id)
+      } else {
+        // staleInterrupt with no content either: drop the wrong message but
+        // keep the honest failed state, so a rebuild doesn't inherit a ghost.
+        p.error = '上一次会话未完成且磁盘上没有已构建页面，需要重新构建'
         this.touch(p)
         stalled.push(p.id)
       }
     }
-    if (stalled.length) await this.persist()
-    return stalled
+    if (stalled.length || recovered.length) await this.persist()
+    return { stalled, recovered }
   }
 
   /** Re-load harvested pages from disk after a restart (index rebuild). */

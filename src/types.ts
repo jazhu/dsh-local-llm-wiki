@@ -16,6 +16,8 @@ export interface WikiPage {
   /** 0..1 confidence from frontmatter, default 1. */
   confidence: number
   updated: string
+  /** Frontmatter keys actually present (for required-field lint; R4). */
+  frontKeys: string[]
   /** Plain-text body (frontmatter stripped). */
   text: string
   /** First paragraph / gist, for snippets. */
@@ -82,7 +84,7 @@ export interface WikiLintReport {
   checkedAt: string
   errorCount: number
   warnCount: number
-  issues: { severity: 'error' | 'warn'; message: string; page?: string }[]
+  issues: { severity: 'error' | 'warn'; message: string; page?: string; ruleCode?: string }[]
 }
 
 /** A raw uploaded document. */

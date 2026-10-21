@@ -137,10 +137,25 @@ console.log('# ProjectStore')
   check('registry persists', store2.list().length === 1)
   check('registry keeps pageCount', store2.get(p.id)?.pageCount === 2)
 
-  // markStalled
+  // markStalled: pages live on disk (harvest succeeds) → recovered to ready,
+  // NOT wrongly condemned as failed (v0.4.6 boot-recovery fix).
   await store2.updateProject(p.id, { status: 'ingesting' })
-  const stalled = await store2.markStalled()
-  check('markStalled flags mid-flight projects', stalled.length === 1 && store2.get(p.id)?.status === 'failed')
+  const { stalled, recovered } = await store2.markStalled()
+  check(
+    'markStalled recovers mid-flight projects with pages on disk',
+    stalled.length === 0 && recovered.length === 1 && store2.get(p.id)?.status === 'ready' && store2.get(p.id)?.error === undefined,
+  )
+  check(
+    'markStalled flags mid-flight projects without content',
+    await (async () => {
+      await store2.updateProject(p.id, { status: 'ingesting' })
+      // wipe the harvested pages so recovery finds no content
+      const { rm } = await import('node:fs/promises')
+      await rm(store2.wikiDir(p.id), { recursive: true, force: true })
+      const r = await store2.markStalled()
+      return r.stalled.length === 1 && store2.get(p.id)?.status === 'failed' && !!store2.get(p.id)?.error
+    })(),
+  )
 
   // delete
   check('deleteProject removes', await store2.deleteProject(p.id) === true)

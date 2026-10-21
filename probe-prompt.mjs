@@ -1,34 +1,25 @@
 // Smoke probe for the optimized build prompts (session-ingest.ts).
 // Renders each prompt through the real submit* functions (esbuild-compiled on
-// the fly) with a capture-stub controller, then asserts the protocol anchors
-// that make the session follow llm-wiki's ingest-workflow instead of
-// improvising: agent fan-out limits, .ingest-cache output path contract,
-// coverage check, manifest bookkeeping, batch logging, cleanup, done-tool.
+// the fly) with a capture-stub controller, then asserts:
+//  - core: plugin-contract anchors (paths, done tool, receipts) present in EVERY mode;
+//  - protocol: llm-wiki methodology restatements (phase numbers, concurrency,
+//    BUNDLED pointers) present ONLY in inline/auto — in tool mode the skill
+//    loaded via Step 0 is the sole methodology source (user ruling m08925:
+//    the prompt must not carry skill content), and the NOT: assertions below
+//    prove it;
+//  - withSkill banner checks per mode.
 // Run: node probe-prompt.mjs
 import { render, cleanup } from './_probe-import.mjs'
 
-// Shared checks: must hold in every mode.
-const shared = {
+// Core contract: must hold in every mode.
+const core = {
   design: [
-    ['schema target path', ['SCHEMA.md']],
+    ['schema target path', 'SCHEMA.md'],
+    ['project facts section', '## 项目事实'],
     ['no-build constraint', '不构建页面'],
     ['no done tool', '不调用任何"构建完成"类工具'],
   ],
   ingest: [
-    ['concurrency limit', 'MAX_CONCURRENT_AGENTS=5'],
-    ['timeout', '300s'],
-    ['retry once', '重试 1 次'],
-    ['cache output path', '/tmp/wiki-proj/hillstone-wiki/.ingest-cache/<slug>.json'],
-    ['forbidden output paths', '禁止写入 raw/'],
-    ['no chinese quotes in json', '禁用中文引号'],
-    ['no see_also field', '不得包含独立的参见字段'],
-    ['no batch skipping', '禁止跳过剩余批次直接进入 Phase 3'],
-    ['batch logging', '累计进度'],
-    ['coverage check', '覆盖率验证'],
-    ['manifest update', 'last_updated'],
-    ['assigned_to', 'assigned_to'],
-    ['cleanup', '递归清理'],
-    ['root whitelist', '项目根目录只允许 raw/ 与 <wiki>/'],
     ['done tool', 'wiki_done'],
     ['projectId echo', '"proj-1"'],
     ['wikiDir echo', '"/tmp/wiki-proj/hillstone-wiki"'],
@@ -36,28 +27,49 @@ const shared = {
   build: [
     ['two phases', '第一阶段（设计，产出 SCHEMA.md）'],
     ['no pause', '无需任何确认'],
-    ['concurrency limit', 'MAX_CONCURRENT_AGENTS=5'],
-    ['cache output path', '/tmp/wiki-proj/hillstone-wiki/.ingest-cache/<slug>.json'],
-    ['no batch skipping', '禁止跳过剩余批次直接进入 Phase 3'],
-    ['coverage check', '覆盖率验证'],
-    ['cleanup', '递归清理'],
+    ['batch logging', '累计进度'],
     ['done tool', 'wiki_done'],
   ],
   lintfix: [
     ['schema source', 'SCHEMA.md'],
-    ['templates reference', 'BUNDLED: references/templates.md'],
-    ['missing pages', '补建缺失的目标页面'],
-    ['frontmatter fields', 'title/tags/sources/updated/confidence/aliases/related'],
+    ['rule handling', 'error 级问题'],
     ['cleanliness', '清洁度'],
     ['done tool', 'wiki_done'],
   ],
 }
 
+// Protocol restatements: inline/auto only.
+const protocol = {
+  design: [['schema-guide pointer', 'BUNDLED: references/schema-guide.md']],
+  ingest: [
+    ['concurrency limit', 'MAX_CONCURRENT_AGENTS=5'],
+    ['timeout', '300s'],
+    ['retry once', '重试 1 次'],
+    ['no chinese quotes in json', '禁用中文引号'],
+    ['no see_also field', '不得包含独立的参见字段'],
+    ['no batch skipping', '禁止跳过剩余批次直接进入 Phase 3'],
+    ['coverage check', '覆盖率验证'],
+    ['manifest update', 'last_updated'],
+    ['assigned_to', 'assigned_to'],
+    ['cleanup', '递归清理'],
+    ['root whitelist', '项目根目录只允许 raw/ 与 <wiki>/'],
+  ],
+  build: [
+    ['concurrency limit', 'MAX_CONCURRENT_AGENTS=5'],
+    ['no batch skipping', '禁止跳过剩余批次直接进入 Phase 3'],
+    ['coverage check', '覆盖率验证'],
+    ['cleanup', '递归清理'],
+    ['root whitelist', '项目根目录只允许 raw/ 与 <wiki>/'],
+  ],
+  lintfix: [
+    ['templates reference', 'BUNDLED: references/templates.md'],
+    ['missing pages', '补建缺失的目标页面'],
+    ['frontmatter fields', 'title/tags/sources/updated/confidence/aliases/related'],
+  ],
+}
+
 // Mode-specific checks.
 const inlineOnly = {
-  design: [
-    ['schema-guide reference', 'BUNDLED: references/schema-guide.md'],
-  ],
   withSkill: [
     ['attachment pointer', '<llm-wiki-skill-attachment>'],
     ['BUNDLED marker hint', 'BUNDLED: <path>'],
@@ -77,9 +89,26 @@ const toolMode = {
     ['step 0', '步骤 0'],
   ],
 }
-// tool only: the leanest mode must NOT carry the digest at all.
+// tool only: the leanest mode must NOT carry the digest NOR any skill
+// methodology restatement — the loaded skill is the sole protocol source.
 const toolOnly = {
   withSkill: [['no digest in tool mode', 'NOT:核心协议要点']],
+  design: [['no schema-guide pointer', 'NOT:BUNDLED: references/schema-guide.md']],
+  ingest: [
+    ['no concurrency number', 'NOT:MAX_CONCURRENT_AGENTS'],
+    ['no timeout number', 'NOT:300s'],
+    ['no templates pointer', 'NOT:BUNDLED: references/templates.md'],
+    ['points at skill instead', '以技能全文'],
+  ],
+  build: [
+    ['no concurrency number', 'NOT:MAX_CONCURRENT_AGENTS'],
+    ['no batch-skipping rule text', 'NOT:禁止跳过剩余批次直接进入'],
+    ['points at skill instead', '以技能全文'],
+  ],
+  lintfix: [
+    ['no templates pointer', 'NOT:BUNDLED: references/templates.md'],
+    ['no frontmatter field list', 'NOT:confidence/aliases/related'],
+  ],
 }
 // auto only: the fallback digest must be embedded.
 const autoOnly = {
@@ -97,17 +126,17 @@ const runChecks = async (kind, list, mode, text) => {
     console.log(`${hit ? 'PASS' : 'FAIL'}  [${kind}/${mode}] ${label}${hit ? '' : ` — missing: ${needle}`}`)
   }
 }
-for (const [kind, list] of Object.entries(shared)) {
+// core: every mode; protocol: inline/auto only.
+for (const kind of Object.keys(core)) {
   for (const mode of ['inline', 'tool', 'auto']) {
     const text = await render(kind, mode)
-    await runChecks(kind, list, mode, text)
+    await runChecks(kind, core[kind], mode, text)
+    if (mode !== 'tool' && protocol[kind]) await runChecks(kind, protocol[kind], mode, text)
   }
 }
-for (const mode of ['inline']) {
-  for (const [kind, list] of Object.entries(inlineOnly)) {
-    const text = await render(kind, mode)
-    await runChecks(kind, list, mode, text)
-  }
+for (const [kind, list] of Object.entries(inlineOnly)) {
+  const text = await render(kind, 'inline')
+  await runChecks(kind, list, 'inline', text)
 }
 for (const mode of ['tool', 'auto']) {
   for (const [kind, list] of Object.entries(toolMode)) {
@@ -115,17 +144,13 @@ for (const mode of ['tool', 'auto']) {
     await runChecks(kind, list, mode, text)
   }
 }
-for (const mode of ['tool']) {
-  for (const [kind, list] of Object.entries(toolOnly)) {
-    const text = await render(kind, mode)
-    await runChecks(kind, list, mode, text)
-  }
+for (const [kind, list] of Object.entries(toolOnly)) {
+  const text = await render(kind, 'tool')
+  await runChecks(kind, list, 'tool', text)
 }
-for (const mode of ['auto']) {
-  for (const [kind, list] of Object.entries(autoOnly)) {
-    const text = await render(kind, mode)
-    await runChecks(kind, list, mode, text)
-  }
+for (const [kind, list] of Object.entries(autoOnly)) {
+  const text = await render(kind, 'auto')
+  await runChecks(kind, list, 'auto', text)
 }
 const failed = results.filter((r) => !r.hit)
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`)

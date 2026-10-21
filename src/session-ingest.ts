@@ -326,8 +326,9 @@ export async function submitLintFix(args: ProjectSubmitArgs & { lintReport: stri
 }
 
 function buildLintFixPrompt(args: ProjectSubmitArgs, lintReport: string, doneTool: string): string {
+  const lean = args.skillInjection === 'tool'
   return [
-    `你是知识库维护助手。请按上述 llm-wiki 技能的 wiki-lint / wiki-update 方法修复下面报告中的所有 error 级问题（warn 级尽力处理）。`,
+    `你是知识库维护助手。请按${skillRef(args.skillInjection)}的 wiki-lint / wiki-update 方法修复下面报告中的所有 error 级问题（warn 级尽力处理）。`,
     ``,
     `## 项目事实`,
     `- 项目名：${args.projectName}`,
@@ -342,13 +343,19 @@ function buildLintFixPrompt(args: ProjectSubmitArgs, lintReport: string, doneToo
     `## 可参照的源文档（raw/ 下，共 ${args.rawDocs.length} 篇）`,
     args.rawDocs.map((d) => `- raw/${d.name}`).join('\n') || '（无）',
     ``,
-    `## 修复要求`,
-    `1. 「链接指向不存在的页面」：优先补建缺失的目标页面（按技能中 BUNDLED: references/templates.md 的页面模板，带 YAML frontmatter，内容基于 raw/ 源文档撰写；若该主题在源文档中不存在，则把引用页的链接改为指向已有页面或去掉链接）；`,
-    `2. 「页面缺少标题」「孤立页面」：补 frontmatter title，或在 index.md 中为孤立页面建立入口链接；`,
-    `3. 「frontmatter 缺字段」：按 SCHEMA.md 的必填字段补齐（title/tags/sources/updated/confidence/aliases/related）；`,
-    `4. 「工作区清洁度」：删除临时脚本/报告（*.py *.js *.sh *.html）、entities/、output/、raw/_temp_*.json、.ingest-cache/，项目根目录只允许 raw/ 与 <wiki>/；`,
-    `5. 不要改动与问题无关的页面；不要删除或改写 SCHEMA.md / log.md / index.md（index.md 仅允许补链接）；`,
-    `6. 修复完成后自查一遍链接完整性与 frontmatter 必填字段，log.md 追加本次修复记录（含耗时）。`,
+    lean
+      ? `## 修复要求
+1. 逐条处理报告中带 ruleCode 的 error 级问题；修复方法（页面模板、frontmatter 字段、小节结构、交叉引用）以技能全文 wiki-lint / wiki-update 部分为准，本提示词不重复；
+2. 「工作区清洁度」：删除临时脚本/报告（*.py *.js *.sh *.html）、entities/、output/、raw/_temp_*.json、.ingest-cache/，项目根目录只允许 raw/ 与 <wiki>/；
+3. 不要改动与问题无关的页面；不要删除或改写 SCHEMA.md / log.md / index.md（index.md 仅允许补链接）；
+4. 修复完成后自查一遍链接完整性与 frontmatter 必填字段，log.md 追加本次修复记录（含耗时）。`
+      : `## 修复要求
+1. 「链接指向不存在的页面」：优先补建缺失的目标页面（按技能中 BUNDLED: references/templates.md 的页面模板，带 YAML frontmatter，内容基于 raw/ 源文档撰写；若该主题在源文档中不存在，则把引用页的链接改为指向已有页面或去掉链接）；
+2. 「页面缺少标题」「孤立页面」：补 frontmatter title，或在 index.md 中为孤立页面建立入口链接；
+3. 「frontmatter 缺字段」：按 SCHEMA.md 的必填字段补齐（title/tags/sources/updated/confidence/aliases/related）；
+4. 「工作区清洁度」：删除临时脚本/报告（*.py *.js *.sh *.html）、entities/、output/、raw/_temp_*.json、.ingest-cache/，项目根目录只允许 raw/ 与 <wiki>/；
+5. 不要改动与问题无关的页面；不要删除或改写 SCHEMA.md / log.md / index.md（index.md 仅允许补链接）；
+6. 修复完成后自查一遍链接完整性与 frontmatter 必填字段，log.md 追加本次修复记录（含耗时）。`,
     ``,
     `## 完成回执`,
     `完成后必须调用工具 ${doneTool} 回写结果，参数为：`,
@@ -443,10 +450,30 @@ function tz(): string {
   }
 }
 
+// ── Prompt shaping by skill-injection mode (user ruling 2026-10-21, m08925) ──
+//
+// The plugin's own contract is only: where the files live, what must be
+// produced, and the `wiki_done` receipt. Everything else — the four ingest
+// phases, MAX_CONCURRENT_AGENTS / 300s / retry numbers, the .ingest-cache
+// output-path rules, frontmatter field lists, and the BUNDLED template
+// pointers — is llm-wiki skill content.
+//
+// In `inline` / `auto` the session may be working without the skill's full
+// text (inline embeds it; auto hopes for a skill-tool call but may fall back to
+// the digest), so the prompts restate the protocol and pass `protocol=false`
+// nowhere. In `tool` mode the skill IS the methodology source, so the task
+// body drops the protocol sections entirely and points at the loaded skill.
+
+/** Skill reference phrasing for the opening line: '上述' only when text precedes it. */
+function skillRef(mode: SkillInjection | undefined): string {
+  return mode === 'tool' ? '步骤 0 加载的 llm-wiki 技能' : '上述 llm-wiki 技能'
+}
+
 function buildDesignPrompt(args: ProjectSubmitArgs, listing: string): string {
   const schemaPath = path.join(args.wikiDir, 'SCHEMA.md')
+  const lean = args.skillInjection === 'tool'
   return [
-    `你是知识库架构师。请严格按上述 llm-wiki 技能的 wiki-design 方法，为下面这个项目产出 SCHEMA.md 草稿（只做设计，不构建页面）。`,
+    `你是知识库架构师。请严格按${skillRef(args.skillInjection)}的 wiki-design 方法，为下面这个项目产出 SCHEMA.md 草稿（只做设计，不构建页面）。`,
     ``,
     `## 项目事实`,
     `- 项目名：${args.projectName}`,
@@ -458,12 +485,17 @@ function buildDesignPrompt(args: ProjectSubmitArgs, listing: string): string {
     `## 源文档（raw/，只读，共 ${args.rawDocs.length} 篇）`,
     listing,
     ``,
-    `## 执行步骤（按 wiki-design 六步）`,
-    `1. 通读源文档清单并抽样阅读内容（大文档只读关键章节，不要全文粘贴进上下文）；`,
-    `2. 确定用户画像与高频查询；按体系 A 规划 entities/ + concepts/ + comparisons/ + queries/ 四类页面；`,
-    `3. 产出实体清单、跨实体概念清单、对比组清单（含每个页面的 slug 命名）；`,
-    `4. 写 SCHEMA.md 前必须先读技能中 BUNDLED: references/schema-guide.md 块，SCHEMA 至少覆盖：领域定义、目录约定、Frontmatter 必填字段（title/tags/sources/updated/confidence/aliases/related）、标签体系、页面模板选择、交叉引用规则、index.md 规范、log.md 规范；`,
-    `5. 写 SCHEMA.md 到 ${schemaPath}。`,
+    lean
+      ? [
+          `## 任务`,
+          `按技能中 wiki-design 方法完成设计并写入 ${schemaPath}（方法步骤、SCHEMA 必覆盖项与页面模板选择均以技能全文为准，本提示词不重复）。`,
+        ].join('\n')
+      : `## 执行步骤（按 wiki-design 六步）
+1. 通读源文档清单并抽样阅读内容（大文档只读关键章节，不要全文粘贴进上下文）；
+2. 确定用户画像与高频查询；按体系 A 规划 entities/ + concepts/ + comparisons/ + queries/ 四类页面；
+3. 产出实体清单、跨实体概念清单、对比组清单（含每个页面的 slug 命名）；
+4. 写 SCHEMA.md 前必须先读技能中 BUNDLED: references/schema-guide.md 块，SCHEMA 至少覆盖：领域定义、目录约定、Frontmatter 必填字段（title/tags/sources/updated/confidence/aliases/related）、标签体系、页面模板选择、交叉引用规则、index.md 规范、log.md 规范；
+5. 写 SCHEMA.md 到 ${schemaPath}。`,
     ``,
     `## 硬性约束`,
     `- 只写 SCHEMA.md 这一个文件；不得生成任何页面、不得运行 ingest；`,
@@ -476,8 +508,9 @@ function buildDesignPrompt(args: ProjectSubmitArgs, listing: string): string {
 }
 
 function buildIngestPrompt(args: ProjectSubmitArgs, listing: string, doneTool: string): string {
+  const lean = args.skillInjection === 'tool'
   return [
-    `你是知识库构建助手。请严格按上述 llm-wiki 技能的 wiki-init + wiki-ingest 方法，把 raw/ 里的源文档编译成结构化 wiki 页面。`,
+    `你是知识库构建助手。请严格按${skillRef(args.skillInjection)}的 wiki-init + wiki-ingest 方法，把 raw/ 里的源文档编译成结构化 wiki 页面。`,
     ``,
     `## 项目事实`,
     `- 项目名：${args.projectName}`,
@@ -489,16 +522,23 @@ function buildIngestPrompt(args: ProjectSubmitArgs, listing: string, doneTool: s
     `## 本次待处理源文档（raw/ 下，共 ${args.rawDocs.length} 篇）`,
     listing,
     ``,
-    `## 执行步骤（严格按 ingest-workflow）`,
-    `1. wiki-init：若 ${args.wikiDir} 下尚无 index.md / log.md，按 SCHEMA.md 建骨架（index.md 已存在则跳过 init）；`,
-    `2. Phase 1 规划：读 SCHEMA.md 得到页面清单（实体/概念/对比/查询）；读 manifest.json，把本次 ${args.rawDocs.length} 篇源文档按 SHA256 标为 added/modified/unchanged，映射到受影响的页面，得到 pending 页面清单；`,
-    `3. Phase 2 分批并行提取（核心）：先创建 ${args.wikiDir}/.ingest-cache/ 目录；按 MAX_CONCURRENT_AGENTS=5 启动子 Agent 批次，每个子 Agent 只输出结构化 JSON（frontmatter + 各章节要点，不生成 Markdown），`,
-    `   JSON 必须写到 ${args.wikiDir}/.ingest-cache/<slug>.json；子 Agent 超时 300s、失败重试 1 次（缩到最核心 3 篇源文档），仍失败由你兜底；`,
-    `   每个子 Agent 的 prompt 必须显式给出输出路径，禁止写入 raw/、entities/、output/ 或项目根目录；JSON 字符串值内禁用中文引号；JSON 中不得包含独立的参见字段，跨页引用由你在 Phase 3 统一生成；`,
-    `   ⚠ 禁止跳过剩余批次直接进入 Phase 3；每批完成后在 log.md 记录批次编号、页面列表、成功/失败数、累计进度；`,
-    `4. Phase 3 合并组装：把每个 JSON 组装成正式 Markdown 页面（用技能中 BUNDLED: references/templates.md 的页面模板），带 YAML frontmatter（title/tags/sources/updated/confidence/aliases/related），落到 entities/ concepts/ comparisons/ queries/；交叉引用只指向 SCHEMA.md 已定义的 slug；在 index.md 建立总览与链接；`,
-    `5. Phase 4 收尾：覆盖率验证——本次每篇源文档都必须出现在至少一个页面的 sources 里，缺一篇就补；更新 manifest.json（last_updated、每个文档 assigned_to）；递归清理：删除 .ingest-cache/ 及项目根目录所有临时脚本/报告（*.py *.js *.sh *.html），项目根目录只允许 raw/ 与 <wiki>/ 存在；`,
-    `6. log.md 追加本次操作记录（含耗时与页面清单）。`,
+    lean
+      ? [
+          `## 任务`,
+          `按技能中 wiki-init + wiki-ingest 方法（含 Phase 1 规划 → Phase 2 并行提取 → Phase 3 组装 → Phase 4 收尾）完成构建。`,
+          `执行协议的全部细节（并行度与子 Agent 约束、.ingest-cache 输出路径、页面模板与 frontmatter 字段、覆盖率验证、manifest 回写、临时文件清理）以技能全文 ingest-workflow / templates 部分为准，本提示词不重复。`,
+          `每批完成后在 log.md 记录批次编号、页面列表、成功/失败数与累计进度；全部产出必须落在 ${args.wikiDir} 内。`,
+        ].join('\n')
+      : `## 执行步骤（严格按 ingest-workflow）
+1. wiki-init：若 ${args.wikiDir} 下尚无 index.md / log.md，按 SCHEMA.md 建骨架（index.md 已存在则跳过 init）；
+2. Phase 1 规划：读 SCHEMA.md 得到页面清单（实体/概念/对比/查询）；读 manifest.json，把本次 ${args.rawDocs.length} 篇源文档按 SHA256 标为 added/modified/unchanged，映射到受影响的页面，得到 pending 页面清单；
+3. Phase 2 分批并行提取（核心）：先创建 ${args.wikiDir}/.ingest-cache/ 目录；按 MAX_CONCURRENT_AGENTS=5 启动子 Agent 批次，每个子 Agent 只输出结构化 JSON（frontmatter + 各章节要点，不生成 Markdown），
+   JSON 必须写到 ${args.wikiDir}/.ingest-cache/<slug>.json；子 Agent 超时 300s、失败重试 1 次（缩到最核心 3 篇源文档），仍失败由你兜底；
+   每个子 Agent 的 prompt 必须显式给出输出路径，禁止写入 raw/、entities/、output/ 或项目根目录；JSON 字符串值内禁用中文引号；JSON 中不得包含独立的参见字段，跨页引用由你在 Phase 3 统一生成；
+   ⚠ 禁止跳过剩余批次直接进入 Phase 3；每批完成后在 log.md 记录批次编号、页面列表、成功/失败数、累计进度；
+4. Phase 3 合并组装：把每个 JSON 组装成正式 Markdown 页面（用技能中 BUNDLED: references/templates.md 的页面模板），带 YAML frontmatter（title/tags/sources/updated/confidence/aliases/related），落到 entities/ concepts/ comparisons/ queries/；交叉引用只指向 SCHEMA.md 已定义的 slug；在 index.md 建立总览与链接；
+5. Phase 4 收尾：覆盖率验证——本次每篇源文档都必须出现在至少一个页面的 sources 里，缺一篇就补；更新 manifest.json（last_updated、每个文档 assigned_to）；递归清理：删除 .ingest-cache/ 及项目根目录所有临时脚本/报告（*.py *.js *.sh *.html），项目根目录只允许 raw/ 与 <wiki>/ 存在；
+6. log.md 追加本次操作记录（含耗时与页面清单）。`,
     ``,
     `## 硬性约束`,
     `- 所有产出必须落在 ${args.wikiDir} 内；不得修改 raw/ 下任何文件；`,
@@ -522,8 +562,9 @@ function buildIngestPrompt(args: ProjectSubmitArgs, listing: string, doneTool: s
  */
 function buildFullBuildPrompt(args: ProjectSubmitArgs, listing: string, doneTool: string): string {
   const schemaPath = path.join(args.wikiDir, 'SCHEMA.md')
+  const lean = args.skillInjection === 'tool'
   return [
-    `你是知识库构建助手。请严格按上述 llm-wiki 技能，在一个会话内连续完成 设计（wiki-design）与 构建（wiki-init + wiki-ingest）两个阶段，中间不暂停、不等待人工确认。`,
+    `你是知识库构建助手。请严格按${skillRef(args.skillInjection)}，在一个会话内连续完成 设计（wiki-design）与 构建（wiki-init + wiki-ingest）两个阶段，中间不暂停、不等待人工确认。`,
     ``,
     `## 项目事实`,
     `- 项目名：${args.projectName}`,
@@ -536,21 +577,30 @@ function buildFullBuildPrompt(args: ProjectSubmitArgs, listing: string, doneTool
     `## 源文档（raw/，只读，共 ${args.rawDocs.length} 篇）`,
     listing,
     ``,
-    `## 第一阶段（设计，产出 SCHEMA.md）`,
-    `1. 通读源文档清单并抽样阅读（大文档只读关键章节）；`,
-    `2. 按体系 A 规划 entities/ + concepts/ + comparisons/ + queries/，产出实体清单、跨实体概念清单、对比组清单（含每个页面 slug）；`,
-    `3. 写 SCHEMA.md 前必须先读技能中 BUNDLED: references/schema-guide.md 块，SCHEMA 覆盖：领域定义、目录约定、Frontmatter 必填字段、标签体系、页面模板、交叉引用规则、index.md/log.md 规范；`,
-    `4. 写入 ${schemaPath}。`,
-    ``,
-    `## 第二阶段（构建，紧接第一阶段，无需任何确认）`,
-    `1. wiki-init：按你刚写的 SCHEMA.md 建骨架（index.md / log.md / 子目录 + .gitignore）；`,
-    `2. Phase 1 规划：从 SCHEMA.md 取页面清单，结合本次 ${args.rawDocs.length} 篇源文档得到 pending 页面清单；`,
-    `3. Phase 2 分批并行提取（核心）：先创建 ${args.wikiDir}/.ingest-cache/ 目录；按 MAX_CONCURRENT_AGENTS=5 启动子 Agent 批次，子 Agent 只输出结构化 JSON（frontmatter + 章节要点，不生成 Markdown），JSON 必须写到 ${args.wikiDir}/.ingest-cache/<slug>.json；子 Agent 超时 300s、失败重试 1 次（缩到最核心 3 篇源文档），仍失败由你兜底；`,
-    `   每个子 Agent 的 prompt 必须显式给出输出路径，禁止写入 raw/、entities/、output/ 或项目根目录；JSON 字符串值内禁用中文引号；JSON 不含独立参见字段，跨页引用由你在 Phase 3 统一生成；`,
-    `   ⚠ 禁止跳过剩余批次直接进入 Phase 3；每批完成后在 log.md 记录批次编号、页面列表、成功/失败数、累计进度；`,
-    `4. Phase 3 合并组装：按技能中 BUNDLED: references/templates.md 的页面模板把 JSON 组装成正式 Markdown 页面，带 YAML frontmatter（title/tags/sources/updated/confidence/aliases/related），落到 entities/ concepts/ comparisons/ queries/；交叉引用只指向 SCHEMA.md 已定义 slug；在 index.md 建立总览与链接；`,
-    `5. Phase 4 收尾：覆盖率验证（每篇源文档都出现在至少一个页面 sources 里）；更新 manifest.json；递归清理 .ingest-cache/ 与项目根目录临时文件，项目根目录只允许 raw/ 与 <wiki>/；`,
-    `6. log.md 追加本次操作记录（含耗时与页面清单）。`,
+    lean
+      ? [
+          `## 第一阶段（设计，产出 SCHEMA.md）`,
+          `按技能中 wiki-design 方法完成设计并写入 ${schemaPath}；SCHEMA 必覆盖项与方法步骤均以技能全文为准，本提示词不重复。`,
+          ``,
+          `## 第二阶段（构建，紧接第一阶段，无需任何确认）`,
+          `按 wiki-init + wiki-ingest 方法（Phase 1 规划 → Phase 2 并行提取 → Phase 3 组装 → Phase 4 收尾）把 raw/ 源文档编译成 wiki 页面；页面模板、frontmatter 字段、并行度与子 Agent 约束、覆盖率验证、manifest 回写、临时文件清理等协议细节均以技能全文为准。`,
+          `每批完成后在 log.md 记录批次编号、页面列表、成功/失败数与累计进度；全部产出必须落在 ${args.wikiDir} 内。`,
+        ].join('\n')
+      : `## 第一阶段（设计，产出 SCHEMA.md）
+1. 通读源文档清单并抽样阅读（大文档只读关键章节）；
+2. 按体系 A 规划 entities/ + concepts/ + comparisons/ + queries/，产出实体清单、跨实体概念清单、对比组清单（含每个页面 slug）；
+3. 写 SCHEMA.md 前必须先读技能中 BUNDLED: references/schema-guide.md 块，SCHEMA 覆盖：领域定义、目录约定、Frontmatter 必填字段、标签体系、页面模板、交叉引用规则、index.md/log.md 规范；
+4. 写入 ${schemaPath}。
+
+## 第二阶段（构建，紧接第一阶段，无需任何确认）
+1. wiki-init：按你刚写的 SCHEMA.md 建骨架（index.md / log.md / 子目录 + .gitignore）；
+2. Phase 1 规划：从 SCHEMA.md 取页面清单，结合本次 ${args.rawDocs.length} 篇源文档得到 pending 页面清单；
+3. Phase 2 分批并行提取（核心）：先创建 ${args.wikiDir}/.ingest-cache/ 目录；按 MAX_CONCURRENT_AGENTS=5 启动子 Agent 批次，子 Agent 只输出结构化 JSON（frontmatter + 章节要点，不生成 Markdown），JSON 必须写到 ${args.wikiDir}/.ingest-cache/<slug>.json；子 Agent 超时 300s、失败重试 1 次（缩到最核心 3 篇源文档），仍失败由你兜底；
+   每个子 Agent 的 prompt 必须显式给出输出路径，禁止写入 raw/、entities/、output/ 或项目根目录；JSON 字符串值内禁用中文引号；JSON 不含独立参见字段，跨页引用由你在 Phase 3 统一生成；
+   ⚠ 禁止跳过剩余批次直接进入 Phase 3；每批完成后在 log.md 记录批次编号、页面列表、成功/失败数、累计进度；
+4. Phase 3 合并组装：按技能中 BUNDLED: references/templates.md 的页面模板把 JSON 组装成正式 Markdown 页面，带 YAML frontmatter（title/tags/sources/updated/confidence/aliases/related），落到 entities/ concepts/ comparisons/ queries/；交叉引用只指向 SCHEMA.md 已定义 slug；在 index.md 建立总览与链接；
+5. Phase 4 收尾：覆盖率验证（每篇源文档都出现在至少一个页面 sources 里）；更新 manifest.json；递归清理 .ingest-cache/ 与项目根目录临时文件，项目根目录只允许 raw/ 与 <wiki>/；
+6. log.md 追加本次操作记录（含耗时与页面清单）。`,
     ``,
     `## 硬性约束`,
     `- 所有产出必须落在 ${args.wikiDir} 内；不得修改 raw/ 下任何文件；`,

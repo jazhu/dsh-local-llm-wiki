@@ -2098,7 +2098,7 @@ function activate(ctx, config) {
       const report = p.lint;
       if (!report || !report.errorCount && !report.warnCount) throw new Error("\u5F53\u524D\u6CA1\u6709\u9700\u8981\u4FEE\u590D\u7684 lint \u95EE\u9898");
       const rawDocs = await store.scanRaw(projectId);
-      const reportText = report.issues.map((i) => `- [${i.severity === "error" ? "error" : "warn"}] ${i.page}: ${i.message}`).join("\n");
+      const reportText = report.issues.map((i) => `- [${i.severity === "error" ? "error" : "warn"}]${i.ruleCode ? ` ${i.ruleCode}` : ""} ${i.page}: ${i.message}`).join("\n");
       const r = await submitLintFix({
         controller: ctrl,
         projectDir: store.projectAbs(projectId),

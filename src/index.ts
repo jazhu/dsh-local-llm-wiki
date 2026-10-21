@@ -474,7 +474,7 @@ function activate(ctx: ContextLike, config?: Partial<Config>): void {
       if (!report || (!report.errorCount && !report.warnCount)) throw new Error('当前没有需要修复的 lint 问题')
       const rawDocs = await store.scanRaw(projectId)
       const reportText = report.issues
-        .map((i) => `- [${i.severity === 'error' ? 'error' : 'warn'}] ${i.page}: ${i.message}`)
+        .map((i) => `- [${i.severity === 'error' ? 'error' : 'warn'}]${i.ruleCode ? ` ${i.ruleCode}` : ''} ${i.page}: ${i.message}`)
         .join('\n')
       const r = await submitLintFix({
         controller: ctrl,

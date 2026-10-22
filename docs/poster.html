@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>DSH Wiki 知识库 · 海报</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1080px; height: 1440px; }
+  body {
+    font-family: "Microsoft YaHei", "msyh", sans-serif;
+    background:
+      radial-gradient(900px 520px at 82% 6%, rgba(56,189,248,.20), transparent 62%),
+      radial-gradient(760px 480px at 8% 26%, rgba(129,140,248,.18), transparent 60%),
+      radial-gradient(820px 560px at 50% 100%, rgba(16,185,129,.14), transparent 62%),
+      linear-gradient(168deg, #070b18 0%, #0b1224 42%, #060a16 100%);
+    color: #e8eefc;
+    position: relative;
+    overflow: hidden;
+  }
+  /* 网格底纹 */
+  body::before {
+    content: ""; position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(148,163,184,.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.055) 1px, transparent 1px);
+    background-size: 60px 60px;
+    mask-image: radial-gradient(760px 900px at 50% 30%, #000 20%, transparent 78%);
+  }
+  .wrap { position: relative; z-index: 2; height: 100%; padding: 74px 76px 60px; display: flex; flex-direction: column; }
+
+  .brand { display: flex; align-items: center; gap: 18px; }
+  .logo {
+    width: 74px; height: 74px; border-radius: 20px; flex: none;
+    background: linear-gradient(140deg, #38bdf8, #6366f1 55%, #10b981);
+    display: flex; align-items: center; justify-content: center; font-size: 40px;
+    box-shadow: 0 12px 34px rgba(56,189,248,.28), inset 0 1px 0 rgba(255,255,255,.35);
+  }
+  .brandname { font-size: 26px; font-weight: 700; letter-spacing: .06em; color: #a9c4e8; }
+  .brandsub { font-size: 15px; color: #6f829e; margin-top: 4px; letter-spacing: .16em; }
+
+  .hero { margin-top: 62px; }
+  .tag {
+    display: inline-block; font-size: 16px; letter-spacing: .1em; font-weight: 700;
+    color: #7dd3fc; border: 1px solid rgba(56,189,248,.42); border-radius: 999px;
+    padding: 9px 20px; background: rgba(56,189,248,.08);
+  }
+  h1 {
+    margin-top: 26px; font-size: 76px; line-height: 1.14; font-weight: 800; letter-spacing: -.5px;
+    background: linear-gradient(96deg, #ffffff 8%, #bae6fd 46%, #a5b4fc 72%, #6ee7b7 96%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .slogan { margin-top: 22px; font-size: 27px; line-height: 1.62; color: #c3d3ea; max-width: 880px; }
+  .slogan b { color: #f1f5ff; font-weight: 700; }
+
+  /* 流程 */
+  .flow { margin-top: 46px; display: flex; align-items: stretch; gap: 0; }
+  .step {
+    flex: 1; border-radius: 18px; padding: 24px 20px 22px;
+    background: linear-gradient(160deg, rgba(255,255,255,.075), rgba(255,255,255,.022));
+    border: 1px solid rgba(148,163,184,.2);
+    box-shadow: 0 10px 26px rgba(2,6,20,.45);
+  }
+  .step .n { font-size: 14px; font-weight: 800; letter-spacing: .18em; color: #64748b; }
+  .step .t { font-size: 24px; font-weight: 800; margin-top: 10px; color: #eef4ff; }
+  .step .d { font-size: 16px; line-height: 1.6; color: #94a8c4; margin-top: 9px; }
+  .arrow { flex: none; width: 46px; display: flex; align-items: center; justify-content: center; font-size: 26px; color: #38bdf8; }
+
+  /* 特性卡 */
+  .grid { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .feat { display: flex; gap: 15px; padding: 19px 20px; border-radius: 16px;
+    background: rgba(13,22,42,.62); border: 1px solid rgba(148,163,184,.16); }
+  .feat .ic { font-size: 26px; flex: none; line-height: 1.2; }
+  .feat .ft { font-size: 20px; font-weight: 800; color: #e6eeff; }
+  .feat .fd { font-size: 15.5px; line-height: 1.6; color: #8ea3c0; margin-top: 6px; }
+
+  .stats { margin-top: 38px; display: flex; gap: 14px; }
+  .stat { flex: 1; text-align: center; padding: 20px 8px; border-radius: 16px;
+    background: linear-gradient(160deg, rgba(56,189,248,.13), rgba(99,102,241,.08));
+    border: 1px solid rgba(125,211,252,.26); }
+  .stat .v { font-size: 34px; font-weight: 800; color: #bae6fd; }
+  .stat .k { font-size: 15px; color: #8fa6c6; margin-top: 6px; letter-spacing: .04em; }
+
+  .cta {
+    margin-top: auto; display: flex; align-items: center; gap: 26px;
+    padding: 26px 30px; border-radius: 20px;
+    background: linear-gradient(120deg, rgba(16,185,129,.16), rgba(56,189,248,.14));
+    border: 1px solid rgba(110,231,183,.32);
+  }
+  .cta .lbl { font-size: 17px; color: #9fb6d4; }
+  .cta .url { font-size: 25px; font-weight: 800; color: #ffffff; font-family: Consolas, "Microsoft YaHei", monospace; letter-spacing: .01em; }
+  .cta .ver { margin-left: auto; font-size: 17px; color: #6ee7b7; font-weight: 700; white-space: nowrap; }
+  .foot { margin-top: 20px; font-size: 14.5px; color: #5c6f8c; display: flex; justify-content: space-between; letter-spacing: .03em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="brand">
+    <div class="logo">📚</div>
+    <div>
+      <div class="brandname">DSH Wiki 知识库</div>
+      <div class="brandsub">dsh-local-llm-wiki · DEEPSEEK HARNESS PLUGIN</div>
+    </div>
+  </div>
+
+  <div class="hero">
+    <span class="tag">本地私有 · AI 自动编译 · 零外部依赖</span>
+    <h1>把散落的文档<br>炼成会回答的知识库</h1>
+    <div class="slogan">拖入 PDF / Word / Markdown，DSH 会话按 <b>llm-wiki</b> 技能自动完成<b>结构设计 → 页面编译 → 质检修补</b>；页面级 BM25 检索直接接进助手，资料留在你自己的机器上。</div>
+  </div>
+
+  <div class="flow">
+    <div class="step">
+      <div class="n">STEP 01</div>
+      <div class="t">上传</div>
+      <div class="d">面板拖拽入 raw/ 不可变原始层，SHA256 清单记账</div>
+    </div>
+    <div class="arrow">▸</div>
+    <div class="step">
+      <div class="n">STEP 02</div>
+      <div class="t">构建</div>
+      <div class="d">⚡ 一键：SCHEMA 设计 + 实体/概念/对比页编译</div>
+    </div>
+    <div class="arrow">▸</div>
+    <div class="step">
+      <div class="n">STEP 03</div>
+      <div class="t">检索</div>
+      <div class="d">wiki_search / wiki_read 让助手带着出处回答</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="feat"><div class="ic">🧠</div><div><div class="ft">内置 llm-wiki 技能</div><div class="fd">随插件自动注册，会话直接调用；提示词零冗余</div></div></div>
+    <div class="feat"><div class="ic">🧩</div><div><div class="ft">多项目独立库</div><div class="fd">产品手册、运维规程、项目归档各成一座知识库</div></div></div>
+    <div class="feat"><div class="ic">♻️</div><div><div class="ft">增量重建</div><div class="fd">只重编译新增与变更文档，未变部分原样保留</div></div></div>
+    <div class="feat"><div class="ic">🩺</div><div><div class="ft">质检与自愈</div><div class="fd">断链/结构/字段规则逐项报告，可一键交给会话修补</div></div></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="v">5</div><div class="k">助手工具 wiki_*</div></div>
+    <div class="stat"><div class="v">7</div><div class="k">方法全生命周期</div></div>
+    <div class="stat"><div class="v">100%</div><div class="k">本地数据不出机器</div></div>
+    <div class="stat"><div class="v">MIT</div><div class="k">开源可自由分发</div></div>
+  </div>
+
+  <div class="cta">
+    <div>
+      <div class="lbl">下载地址（GitHub 开源仓库，克隆即用）</div>
+      <div class="url">https://github.com/jazhu/dsh-local-llm-wiki</div>
+    </div>
+    <div class="ver">v0.4.7 已发布</div>
+  </div>
+
+  <div class="foot">
+    <span>profile 安装：dependencies 填 github:jazhu/dsh-local-llm-wiki#v0.4.7 → pnpm install → 重启 DSH</span>
+    <span>dist 已入库 · 无需目标机构建</span>
+  </div>
+
+</div>
+</body>
+</html>

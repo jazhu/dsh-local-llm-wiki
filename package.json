@@ -2,7 +2,7 @@
   "name": "dsh-local-llm-wiki",
   "displayName": "DSH Wiki 知识库",
   "description": "本地 llm-wiki 知识库插件：Web 面板拖拽上传源文档，一键由真实 DSH 会话按内置 llm-wiki 技能完成 SCHEMA 设计与编译，产出实体/概念/对比/查询四类 Wiki 页面并自动回收；进程内页面级 BM25 检索与链接完整性检查；支持多项目、增量构建（SHA256）、源文件↔页面关联与构建会话的工作区/模型/Auto review 配置。",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "type": "module",
   "license": "MIT",
   "main": "dist/index.mjs",

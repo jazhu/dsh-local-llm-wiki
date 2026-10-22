@@ -1,8 +1,9 @@
-import pathlib, sys
+import pathlib
 from playwright.sync_api import sync_playwright
 
-html = pathlib.Path(r"F:\DSH-WorkSpace\dsh_plugin\dsh-wiki\docs\poster.html").as_uri()
-out = pathlib.Path(r"F:\DSH-WorkSpace\dsh_plugin\dsh-wiki\docs\poster.png")
+here = pathlib.Path(__file__).resolve().parent
+html = (here / "poster.html").as_uri()
+out = here / "poster.png"
 
 with sync_playwright() as p:
     b = p.chromium.launch()

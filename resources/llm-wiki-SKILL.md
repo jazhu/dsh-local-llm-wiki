@@ -2,9 +2,6 @@
 name: llm-wiki
 description: 通用 LLM Wiki 知识库构建与维护技能。基于"LLM writes, human reads"理念，将原始文档编译为结构化知识库，通过 7 大方法（design → init → ingest → query → lint → update → evaluate）完成知识库全生命周期管理。适用场景：(1) 从零搭建领域知识库（产品文档、技术文档、业务知识等），(2) 将原始文档批量摄入为结构化 Wiki 页面，(3) 基于知识库查询回答领域问题，(4) 检查并修复知识库质量问题，(5) 增量更新已有页面，(6) 评估知识库整体健康度。当用户提到"wiki""知识库""LLM Wiki""知识摄入""知识查询""init wiki""ingest""lint""evaluate"等关键词时触发。
 version: '3.5'
-publisher: 虞安虎
-woicrew_hub_slug: llm-wiki
-woicrew_publisher: 虞安虎
 ---
 # LLM Wiki — 知识库构建与维护
 
